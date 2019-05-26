@@ -6,5 +6,6 @@
   :license  "Specify license here"
   :version "0.0.1"
   :serial t
+  :depends-on (:alexandria :screamer)
   :components ((:file "package")
                (:file "system-solver")))

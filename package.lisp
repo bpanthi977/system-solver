@@ -1,4 +1,4 @@
 ;;;; package.lisp
 
-(defpackage #:system-solver
-  (:use #:cl))
+(screamer:define-screamer-package #:system-solver
+  (:use #:cl #:screamer))
