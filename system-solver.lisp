@@ -12,6 +12,7 @@
   ((parameters :initarg :params :accessor parameters)
    (parameter-slots :initarg :parameter-slots)
    (implicit :initarg :implicit)
+
    (name :initarg :name :type 'string :initform "")))
 
 (defclass component ()
@@ -47,30 +48,36 @@
 			   step))))
     (newton-solve g g-derivative x0 tolerance max-iterations)))
 
-(defun generate-solvers (implicit vars)
-  (loop for v in vars
-     for args = (remove 'v vars)
-     collect
-       `(lambda (,args))))
-
+(defmethod update-parameter-names ((c component))
+  (loop for x in (slot-value c 'parameter-slots)
+     for param = (slot-value c x)
+     with component-name = (slot-value c 'name) do
+       (setf (slot-value param 'name) (concatenate 'string component-name "." (slot-value param 'name)))))
 
 (defmethod initialize-instance :after ((c component) &key)
-  (convert-slot-values-to-parameters (slot-value c 'parameter-slots) c))
+  (convert-slot-values-to-parameters (slot-value c 'parameter-slots) c)
+  (update-parameter-names c))
 
 (defmethod initialize-instance :after ((r relation) &key)
   (convert-slot-values-to-parameters (slot-value r 'parameter-slots) r)
-  (setf (slot-value r 'parameters) (loop for v in (slot-value r 'parameter-slots) collect (slot-value r v))))
+  (setf (slot-value r 'parameters) (loop for v in (slot-value r 'parameter-slots)
+				      for p = (slot-value r v) do
+					(pushnew r (slot-value p 'relations) :test #'eql)
+					collect p)))
 
 
 (defmethod solve-relation ((var symbol) (r relation))
+  (print "Solving general relation")
+  (print-parameters (slot-value r 'parameters ))
+  ;; (inspect r)
   (when (slot-boundp r 'implicit)
     (destructuring-bind (pre post) (split-sequence:split-sequence var (slot-value r 'parameter-slots))
       (setf pre (mapcar #'(lambda (x) (value (slot-value r x))) pre)
 	    post (mapcar #'(lambda (x) (value (slot-value r x))) post))
-      (let* ((r (slot-value r 'implicit))
+      (let* ((implicit (slot-value r 'implicit))
 	     (g (lambda (x)
-		  (apply r (concatenate 'list pre (list x) post)))))
-	(newton-solver-general g 0)))))
+		  (apply implicit (print (concatenate 'list pre (list x) post))))))
+	(setf (value (slot-value r var)) (newton-solver-general g 0))))))
 
 (defun known-parameter-p (parameter)
   "Is the parameter's value known?"
@@ -83,6 +90,8 @@
     (when (find relation traversed-relations)
       (format t "already ~a" relation)
       (fail))
+    (print (slot-value relation 'name))
+    (print-parameters (slot-value relation 'parameters))
     ;; (inspect relation)
     (let ((traversed-relations (cons relation traversed-relations))
 	  (traversed-parameters (cons p traversed-parameters)))
@@ -104,7 +113,7 @@
 
 (defun print-parameters (ps)
   (loop for p in ps  do
-       (format t "~%~a = ~a" (slot-value p 'name) (value p))))
+       (format t "~%~a = ~a" (slot-value p 'name) (if (slot-boundp p 'value) (value p) "Unbound"))))
 
 (defun print-relation-parameters (r)
   (print (slot-value r 'name))
@@ -159,7 +168,7 @@
 (defmacro define-component (name &rest body)
   (let ((parameter-list (getf body :parameters nil))
 	(relations-list (getf body :relations nil)))
-    (alexandria:with-gensyms (instance relation-var) 
+    (alexandria:with-gensyms (instance) 
       `(progn
 	 (defclass ,name (component)
 	   ,(append
@@ -169,14 +178,11 @@
 	    `(defmethod initialize-instance :after ((,instance ,name) &key)
 			(with-slots ,parameter-list ,instance		       
 			  ,@(mapcar (lambda (relation)
-				      (let* ((parameters (getf relation :parameters))
-					     (param-vars (plist-values parameters)))
 					(cond
 					  ((getf relation :relation)
-					   `(let ((,relation-var (make-instance ',(getf relation :relation) ,@parameters)))
-					      (push ,relation-var (slot-value ,instance 'relations))
-					      ,@(loop for p in param-vars
-						   collect `(push ,relation-var (slot-value (slot-value ,instance ',p) 'relations))))))))
+					   `(push (make-instance ',(getf relation :relation)
+								 ,@(getf relation :parameters))
+						  (slot-value ,instance 'relations)))))					  
 				    relations-list))))))))
 
 (defmacro define-relation (name &rest body)
@@ -187,7 +193,7 @@
        ,(append
 	 (list `(parameter-slots :initform ',parameter-list :allocation :class))
 	 (when long-name `((name :initform ,long-name :allocation :class)))
-	 (when implicit `((implicit :initform (lambda ,parameter-list ,implicit) :allocation :class)))
+	 (when implicit `((implicit :initform (lambda ,parameter-list ,implicit))))
 	 (mapcar #'param->slot parameter-list)))))
 
 
@@ -198,6 +204,7 @@
    (parameter-slots :initform '(x y))))  
 
 ;;;; TESTING
+
 (define-component pipe
     :parameters (Re vel D nu Q A r hf p1 p2)
     :relations ((:relation pipe-discharge
@@ -218,11 +225,6 @@
        (print-parameters parameters)
        (execute-solution-strategy unknown relations parameters)))))
 
-(defmethod update-parameter-names ((c component))
-  (loop for x in (slot-value c 'parameter-slots)
-     for param = (slot-value c x)
-     with component-name = (slot-value c 'name) do
-       (setf (slot-value param 'name) (concatenate 'string component-name "." (slot-value param 'name)))))
 
 
 (defun t2 ()
@@ -231,15 +233,11 @@
 	 (p3 (make-instance 'pipe :name "p3" :r 170014 :p1 0))
 	 (unknown (slot-value p1 'q))
 	 (discharge-relation (make-instance 'continuity)))
-    (update-parameter-names p1)
-    (update-parameter-names p2)
-    (update-parameter-names p3)
     (add-discharge-connection (slot-value p1 'q) discharge-relation)
     (add-discharge-connection (slot-value p2 'q) discharge-relation)
     (add-discharge-connection (slot-value p3 'q) discharge-relation)
     (make-instance 'equal-pressure :p1 (slot-value p1 'p2) :p2 (slot-value p2 'p2))
     (make-instance 'equal-pressure :p1 (slot-value p3 'p2) :p2 (slot-value p2 'p2))
-
     (one-value
      (multiple-value-bind (relations parameters) (solve-parameter unknown)
        (print relations)
@@ -247,64 +245,30 @@
        ))))
 
 
-(defclass reynolds-number (relation)
-  ((name :initform "Definition of Reynolds Number" :allocation :class)
-   (parameter-slots :initform '(Re v nu D) :allocation :class)
-   (Re :initarg :re :initform (make-instance 'parameter))
-   (v :initarg :v :initform (make-instance 'parameter))
-   (nu :initarg :nu :initform (make-instance 'parameter))
-   (D :initarg :D :initform (make-instance 'parameter))))
+(define-relation reynolds-number
+    :parameters (Re v nu D)
+    :implicit (- Re (* v D (/ nu)))
+    :name "Definition of Reynolds Number")
 
-(defmethod initialize-instance :after ((i reynolds-number) &key)
-  (with-slots (Re v nu D) i
-    (setf (slot-value i 'parameters) (list Re v nu D))
-    (setf (slot-value i 'parameter-slots) '(Re v nu D))))
+(define-relation pipe-discharge 
+    :name "Discharge through pipe"
+    :parameters (Q v d)
+    :implicit (- Q (* v (/ pi 4) (expt d 2))))
 
+(defun t3 ()
+  (let* ((r (make-instance 'pipe-discharge :d 2 :v 1 :q 12)))
 
-(defmethod solve-relation (var (r reynolds-number))
-  (with-slots (Re v nu D) r
-    (setf (value (slot-value r var))
-	  (cond ((eql var 'Re)
-		 (* (value d) (value v) (/ (value nu))))
-		((eql var 'v)
-		 (* (value Re) (value nu) (/ (value d))))
-		((eql var 'd)
-		 (* (value Re) (value nu) (/ (value v))))
-		((eql var 'nu)
-		 (* (value v) (value d) (/ (value Re))))))))
+    (solve-relation 'q r)))
+    ;; (one-value
+    ;;  (multiple-value-bind (relations parameters) (solve-parameter unknown)
+    ;;    (print relations)
+    ;;    (execute-solution-strategy unknown relations parameters)
+    ;;    ))))
 
-(defclass pipe-discharge (relation)
-  ((name :initform "Discharge through pipe" :allocation :class)
-   (parameter-slots :initform '(Q v d))
-   (Q :initarg :Q :initform (make-instance 'parameter))
-   (v :initarg :v :initform (make-instance 'parameter))
-   (d :initarg :d :initform (make-instance 'parameter))))
-
-(defmethod initialize-instance :after ((i pipe-discharge) &key)
-  (with-slots (Q v d parameters parameter-slots) i
-    (setf parameters (list Q v d))))
-
-(defmethod solve-relation ((var (eql 'Q)) (r pipe-discharge))
-  (with-slots (q v d) r
-    (setf (value q) (* (value v) (expt (value d) 2) pi 1/4))))
-
-(defmethod solve-relation ((var symbol) (r pipe-discharge))
-  (with-slots (q v d) r 
-    (cond ((eql var 'd)
-	   (setf (value d) (sqrt (* (/ (value q) (value v) pi) 4))))
-	  ((eql var 'v)
-	   (setf (value v) (/ (value q) (* (expt (value d) 2) pi 1/4)))))))
-
-(defclass head-loss (relation)
-  ((name :initform "Head loss depending on discharge" :allocation :class)
-   (parameter-slots :initform '(r Q hf))
-   (r :initarg :r :initform (make-instance 'parameter))
-   (Q :initarg :Q :initform (make-instance 'parameter))
-   (hf :initarg :hf :initform (make-instance 'parameter))))
-
-(defmethod initialize-instance :after ((i head-loss) &key)
-  (with-slots (r Q hf parameters parameter-slots) i
-    (setf parameters (list r Q hf))))
+(define-relation head-loss
+    :name  "Head loss depending on discharge" 
+    :parameters (r Q hf)
+    :implicit (- hf (* r (expt Q 2))))
 
 (defmethod solve-relation ((var symbol) (r head-loss))
   (with-slots (r q hf) r
@@ -317,15 +281,6 @@
     :parameters (hf p1 p2)
     :implicit (- hf (+ p1 p2))
     :name "Head loss depending on pressure difference")
-
-(defmethod solve-relation ((var symbol) (r head-loss-2))
-  (with-slots (p1 p2 hf) r
-    (cond ((eql var 'p1)
-	   (setf (value p1) (+ (value hf) (value p2))))
-	  ((eql var 'p2)
-	   (setf (value p2) (- (value p1) (value hf))))
-	  ((eql var 'hf)
-	   (setf (value hf) (- (value p1) (value p2)))))))	   
 
 (defclass continuity (relation)
   ((name :initform "Continuity at a junction" :allocation :class)
@@ -341,36 +296,18 @@
 
 (defmethod solve-relation ((var number) (r continuity))
   (with-slots (parameters) r
-    ;; (print var)
-    ;; (print parameters)
     (loop for p in parameters
        with req = (nth (1- var) (reverse parameters))
        with sum = 0 do
-       ;;  (print (slot-value p 'name))
-       ;; (print (value p))
 	 (unless (eql p req)
 	   (incf sum (value p)))
-       ;; (print sum)
        finally
 	 (setf (value req) (- sum)))))
 
-(defclass equal-pressure (relation)
-  ((name :initform "Equal pressure at two point or a junction" :allocation :class)
-   (parameter-slots :initform '(p1 p2))
-   (p1 :initform (make-instance 'property) :initarg :p1)
-   (p2 :initform (make-instance 'property) :initarg :p2)))
-
-(defmethod initialize-instance :after ((i equal-pressure) &key)
-  (with-slots (p1 p2 parameters parameter-slots) i
-    (push i (relations p2))
-    (push i (relations p1))))
-
-(defmethod solve-relation ((var symbol) (r equal-pressure))
-  (with-slots (p1 p2) r
-    (cond ((eql var 'p1)
-	   (setf (value p1) (value p2)))
-	  ((eql var 'p2)
-	   (setf (value p2) (value p1))))))
+(define-relation equal-pressure
+    :name "Equal pressure at two point or a junction"
+    :parameters (p1 p2)
+    :implicit (- p1 p2))
 
 ;; (time (t2)) => 0.020587102
 ;; Evaluation took:
@@ -379,3 +316,12 @@
   ;; 80.77% CPU
   ;; 60,385,688 processor cycles
   ;; 950,896 bytes consed
+
+;; ;; Evaluation took:
+;;   0.053 seconds of real time
+;;   0.054793 seconds of total run time (0.054793 user, 0.000000 system)
+;;   103.77% CPU
+;;   120,340,747 processor cycles
+;;   3,374,416 bytes consed
+  
+;; 0.020587102
