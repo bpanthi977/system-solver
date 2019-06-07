@@ -2,6 +2,7 @@
 
 (in-package #:system-solver)
 (setf *read-default-float-format* 'double-float)
+
 (defclass parameter ()
   ((name :initarg :name)
    (value :initarg :value :accessor value)
@@ -9,10 +10,11 @@
    (dependencies :initarg :dependencies :accessor dependencies)))
 
 (defclass relation ()
-  ((parameters :initarg :params :accessor parameters)
-   (parameter-slots :initarg :parameter-slots)
+  ((parameters :initarg :params :accessor parameters :initform nil)
+   (parameter-slots :initarg :parameter-slots :initform nil)
    (implicit :initarg :implicit)
-
+   (unsolvable-parameters :initarg :unsolvable-parameters :initform nil)
+   (multiplicity :initarg multiplicity :initform 1)
    (name :initarg :name :type 'string :initform "")))
 
 (defclass component ()
@@ -153,7 +155,7 @@
        (unless (slot-boundp p 'value)
 	 (setf (slot-value p 'value) 0)))
   (setf (value unknown) initial-guess)
-  (loop for count from 0 to 100
+  (loop for count from 0 to 10
      for previous-values = (parameter-values parameters)
      for unknown-prev-value = (value unknown)
      with params-stable = nil do 
@@ -230,7 +232,25 @@
   ((x :initarg :x)
    (y :initarg :y)
    (implicit :initform (lambda (x y) (+ x y)))
-   (parameter-slots :initform '(x y))))  
+   (parameter-slots :initform '(x y))))
+
+(defun solve-for (unknown/s)
+  (one-value
+   (let (relations parameters unknown)
+     (loop for u in (alexandria:ensure-list unknown/s) do
+	  (setf unknown u)
+	  (multiple-value-bind (r p) (solve-parameter unknown
+						      :traversed-parameters parameters
+						      :traversed-relations relations)
+	    (setf relations (append r relations))
+	    (setf parameters (append p parameters))))
+     (print-parameters parameters)
+     (print relations)
+     (print "Executing strategy")
+     (execute-solution-strategy unknown relations parameters)
+     (print-parameters parameters)
+     (print (value unknown)))))
+
 
 ;;;; TESTING
 
@@ -254,24 +274,7 @@
        (print-parameters parameters)
        (execute-solution-strategy unknown relations parameters)))))
 
-(defun solve-for (unknown/s)
-  (one-value
-   (let (relations parameters unknown)
-     (loop for u in (alexandria:ensure-list unknown/s) do
-	  (setf unknown u)
-	  (multiple-value-bind (r p) (solve-parameter unknown
-						      :traversed-parameters parameters
-						      :traversed-relations relations)
-	    (setf relations (append r relations))
-	    (setf parameters (append p parameters))))
-     (print-parameters parameters)
-     (print relations)
-     (print "Executing strategy")
-     (execute-solution-strategy unknown relations parameters)
-     (print-parameters parameters)
-     (print (value unknown))))))
-
-(defun t2 ()
+(defun three-reservoir-problem ()
   (let* ((p1 (make-instance 'pipe :name "p1" :r 15938 :p1 24))
 	 (p2 (make-instance 'pipe :name "p2" :r 83565 :p1 8))
 	 (p3 (make-instance 'pipe :name "p3" :r 170014 :p1 0))
@@ -307,8 +310,141 @@
     (solve-for (list (slot-value cd 'q)
 		     (slot-value bc 'hf)))))
 
-    
-	 
+
+;;
+(defparameter *pipe-network-nodes* nil)
+(defclass node ()
+  ((links :initarg :links :initform nil)
+   (pipes :initarg :pipes :initform nil)
+   (ends :initarg :ends :initform nil)
+   (name :initarg :name :initform nil)
+   (number :initarg :number)))
+
+(defmethod print-object ((n node) s)
+  (format s "#<Node ~a>" (slot-value n 'name)))
+
+(defun find-loops0 (starting-node node adjacent-nodes-fn &optional visited-nodes)
+  (let* ((connected-nodes  (set-difference (funcall adjacent-nodes-fn node) visited-nodes))
+	 (next-node (screamer:a-member-of connected-nodes)))
+    (if (eql next-node starting-node)
+	(list next-node)
+	(cons next-node (find-loops0 starting-node next-node adjacent-nodes-fn (cons next-node visited-nodes))))))
+
+(defun find-loops (network adjacent-nodes-fn)
+  (let* ((visited nil)
+	(loops nil)
+	(all-loops (all-values
+		     (let ((node (a-member-of network)))
+		       (setf loops (find-loops0 node node adjacent-nodes-fn visited))
+		       (global (pushnew node visited))
+		       loops))))
+    (remove-if #'(lambda (l) (< (length l) 3))
+	       all-loops)))
+
+(defun connect-with-previous-nodes (node)
+  (loop for n in *pipe-network-nodes*
+     with mypipes = (slot-value node 'pipes) do
+       (when (not (eql n node))
+	 (loop for p in (slot-value n 'pipes) do 
+	      (when (find p mypipes)
+		(pushnew n (slot-value node 'links))
+		(pushnew node (slot-value n 'links))
+		(return))))))
+
+(defun add-node (pipes ends &optional name)
+  (let ((discharge-relation (make-instance 'continuity))
+	(node (make-instance 'node :pipes pipes :ends ends :name name :number (length *pipe-network-nodes*))))
+    (push node *pipe-network-nodes*)
+    (connect-with-previous-nodes node)
+    (loop for p in pipes
+       for endp in ends do 
+	 (add-discharge-connection (slot-value p 'q) discharge-relation endp))))
+
+(defun loop-pipes (nodes)
+  (loop for n in nodes
+     with prev = (first (last nodes))
+     with pipes = nil
+     with signs = nil
+     for pipe = (first (intersection (slot-value n 'pipes) (slot-value prev 'pipes)))
+     for end =  (nth (position pipe (slot-value prev 'pipes))
+		     (slot-value prev 'ends)) do
+       (push pipe pipes)
+       (push (if end 1 -1) signs)
+       (setf prev n)
+     finally (return (list pipes signs))))
+       
+
+(defun add-pipe-network-loop-equations ()
+  (let ((loops (remove-duplicates
+		(find-loops *pipe-network-nodes*
+			    (lambda (node)
+			      (slot-value node 'links)))
+		:test #'equal
+		:key #'(lambda (l) (sort (loop for n in l collect (slot-value n 'number)) #'<)))))
+    (loop for l in loops
+       for (pipes signs) = (loop-pipes l)
+       for eq = (make-instance 'loop-head-loss :pipes pipes :signs signs))))
+
+(defclass loop-head-loss (relation)
+  ((pipes :initarg :pipes)
+   (name :initform "Σ head loss in a loop = 0" :allocation :class)
+   (rs :initform nil :initarg :rs)
+   (qs :initform nil :initarg :qs)
+   (signs :initform nil :initarg :signs)))
+
+(defmethod initialize-instance :after ((i loop-head-loss) &key)
+  (with-slots (qs rs parameters) i
+    (loop for pipe in (reverse (slot-value i 'pipes))
+       for q = (slot-value pipe 'q)
+       for r = (slot-value pipe 'r) do
+	 (push i (slot-value q 'relations))
+	 (push i (slot-value r 'relations))
+	 (push q qs)
+	 (push r rs)
+	 (push q parameters)
+	 (push r parameters))))
+
+(defun signed-sqrt (n)
+    (if (< n 0)
+	(- (sqrt (- n)))
+	(sqrt n)))
+
+(defmethod solve-relation ((var parameter) (relation loop-head-loss))
+  (loop for q in (slot-value relation 'qs)
+     for r in (slot-value relation 'rs)
+     for s in (slot-value relation 'signs)
+     with vq = nil
+     with vr = nil
+     with vs = nil
+     with vtype = nil
+     with sum = 0 do
+       (cond ((eql var r)
+	      (setf vq q vr r vs s vtype :r))
+	     ((eql var q)
+	      (setf vq q vr r vs s vtype :q))
+	     (t (incf sum (* s (signum (value q)) (value r) (expt (value q) 2)))))
+     finally (ecase vtype
+	       (:r (setf (value vr) (abs (/ sum (expt (value vq) 2)))))
+	       (:q (setf (value vq) (signed-sqrt (/ (- sum) vs (value vr))))))))
+       
+   
+
+(defun t4 ()
+  (let* ((1a (make-instance 'pipe :name "1A" :r 0 :q 100))
+	 (ab (make-instance 'pipe :name "AB" :r 1))
+	 (b2 (make-instance 'pipe :name "B2" :r 0 :q 25))
+	 (bc (make-instance 'pipe :name "BC" :r 3))
+	 (bd (make-instance 'pipe :name "BD" :r 2))
+	 (ac (make-instance 'pipe :name "AC" :r 2))
+	 (cd (make-instance 'pipe :name "CD" :r 1))
+	 (d3 (make-instance 'pipe :name "D3" :r 0 :q 75))
+	 (*pipe-network-nodes* nil))
+    (add-node (list 1a ab ac) '(t nil nil) "a")
+    (add-node (list ab bd bc b2) '(t nil nil nil) "b")
+    (add-node (list bd cd d3) '(t t nil) "d")
+    (add-node (list ac bc cd) '(t t nil) "c")
+    (add-pipe-network-loop-equations)
+    (solve-for (slot-value cd 'q))))
 
 
 (define-relation reynolds-number
@@ -320,16 +456,6 @@
     :name "Discharge through pipe"
     :parameters (Q v d)
     :implicit (- Q (* v (/ pi 4) (expt d 2))))
-
-(defun t3 ()
-  (let* ((r (make-instance 'pipe-discharge :d 2 :v 1 :q 12)))
-
-    (solve-relation 'q r)))
-    ;; (one-value
-    ;;  (multiple-value-bind (relations parameters) (solve-parameter unknown)
-    ;;    (print relations)
-    ;;    (execute-solution-strategy unknown relations parameters)
-    ;;    ))))
 
 (define-relation head-loss
     :name  "Head loss depending on discharge" 
@@ -347,11 +473,6 @@
     :parameters (hf p1 p2)
     :implicit (+ hf (- p1) p2)
     :name "Head loss depending on pressure difference")
-
-(defun test1 ()
-  (let ((r (make-instance 'head-loss-2 :hf  -9374.998 :p2  -31875.0)))
-    (solve-relation 'p1 r)))
-
 
 (defclass continuity (relation)
   ((name :initform "Continuity at a junction" :allocation :class)

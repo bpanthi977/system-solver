@@ -15,3 +15,4 @@ Solve for unknown parameters in a system of components. Each component is a set 
 ```
 ### TODO: 
 * Handle depend relations. (e.g. x + y = 2 ; 2x + 2y = 4) (Implement solution strategy that find values satisfying all applicable relations)
+
