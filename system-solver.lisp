@@ -9,6 +9,9 @@
    (relations :initarg :relations :accessor relations :initform nil)
    (dependencies :initarg :dependencies :accessor dependencies)))
 
+(defmethod print-object ((p parameter) s)
+  (format s "<#P ~a>" (slot-value p 'name)))
+
 (defclass relation ()
   ((parameters :initarg :params :accessor parameters :initform nil)
    (parameter-slots :initarg :parameter-slots :initform nil)
@@ -16,6 +19,9 @@
    (unsolvable-parameters :initarg :unsolvable-parameters :initform nil)
    (multiplicity :initarg multiplicity :initform 1)
    (name :initarg :name :type 'string :initform "")))
+
+(defmethod print-object ((r relation) s)
+  (format s "<#~a ~a" (slot-value r 'name) (slot-value r 'parameters)))
 
 (defclass component ()
   ((name :initarg :name)
@@ -81,7 +87,7 @@
 	    post (mapcar #'(lambda (x) (value (slot-value r x))) post))
       (let* ((implicit (slot-value r 'implicit))
 	     (g (lambda (x)
-		  (apply implicit (print (concatenate 'list pre (list x) post))))))
+		  (apply implicit (concatenate 'list pre (list x) post)))))
 	(setf (value (slot-value r var)) (newton-solver-general g 0))))))
 
 (defmethod solve-relation ((p parameter) (r relation))
@@ -89,24 +95,79 @@
 		       (slot-value r 'parameter-slots))
 		  r))
 
+(defmethod eval-relation ((r relation))
+  (when (slot-boundp r 'implicit)
+    (let ((params (mapcar #'(lambda (slot) (value (slot-value r slot))) ;; TODO: sorting can be done beforehand
+			  (slot-value r 'parameter-slots))))
+      (apply (slot-value r 'implicit) params))))
+
 (defun known-parameter-p (parameter)
   "Is the parameter's value known?"
   (slot-boundp parameter 'value))
 
+(defun eval-functions (functions)
+  (map 'vector #'eval-relation functions))
+
+(defun norm (vector)
+  (sqrt (iterate:iter (iterate:for i in-vector vector)
+		      (iterate:summing (expt i 2)))))
+
+(defun norm2 (vector)
+  (loop for i across vector
+       summing i))
+
+(defun solve-system0 (functions parameters initial &optional (increment 0.1))
+  (loop
+     for x in parameters
+     for x0 = (value x)
+     for x1 = (incf (value x) increment) 
+     for new = (eval-functions functions)
+     for dv = (map 'vector (lambda (a b) (* (signum a) (- b a)))
+		   initial new)
+     for norm2-dv = (norm2 dv)
+     for new-x = (if (= 0 norm2-dv) x1 (- x0  (* (norm initial) increment (/ norm2-dv))))
+     with new-values = nil do
+       ;; (print (list x0 x1 new dv norm2-dv new-x))
+       (setf (value x) x0
+	     initial (eval-functions functions))
+       ;; (print new-values)
+       (push new-x new-values)
+     finally (progn
+	       (loop for p in parameters
+		  for v in (reverse new-values) do
+		    (setf (value p) v))
+	       (return initial))))
+
+(defun solve-system (functions parameters &optional (max-iterations 10) (tolerance 0.1))
+  (loop for p in parameters do
+       (unless (slot-boundp p 'value)
+	 (setf (value p) 1)))
+  (loop for x from 1 to max-iterations
+     for v_n = (eval-functions functions)
+     for v_n+1 = (solve-system0 functions parameters v_n) do
+       ;; (print-parameters parameters)
+       (print v_n+1)
+       (print (norm v_n+1))
+       (if (< (norm v_n+1) tolerance)
+	   (return t))
+     finally
+       (progn
+	 (print "Wasn't within tolerance"))))
+	   
 (defun solve-parameter (p &key traversed-relations traversed-parameters)
-  (print "solving parameter")
+  ;; (print "solving parameter")
   (when (or (known-parameter-p p) (find p traversed-parameters))
     (return-from solve-parameter nil))
   (let* ((relation (a-member-of (relations p)))
 	 unknowns)
-    (format t "~%~a ~% tr: ~a ~% tp: " (slot-value p 'name) traversed-relations)
+    ;; (format t "~%~a ~% tr: ~a ~% tp: " (slot-value p 'name) traversed-relations)
     (loop for p in traversed-parameters do (format t "~a, " (slot-value p 'name)))
-    (print nil)
+    ;; (print nil)
     (when (find relation traversed-relations)
-      (format t "already ~a" relation)
+      ;; (format t "already ~a" relation)
       (fail))
-    (print (slot-value relation 'name))
-    (print-parameters (slot-value relation 'parameters))
+    ;; (print (slot-value relation 'name))
+    ;; (print-parameters (slot-value relation 'parameters))
     ;; (inspect relation)
     (let ((traversed-relations (cons relation traversed-relations))
 	  (traversed-parameters (cons p traversed-parameters)))
@@ -116,7 +177,7 @@
 	    (loop for unknown in unknowns do
 		 (unless (find unknown traversed-parameters)
 		     (progn 
-		       (format t "~% solving for ~a" (slot-value unknown 'name))
+		       ;; (format t "~% solving for ~a" (slot-value unknown 'name))
 		       (setf (values traversed-relations traversed-parameters)
 			     (solve-parameter unknown
 					      :traversed-relations traversed-relations
@@ -136,10 +197,10 @@
   (loop
      for r in relations
      for p in parameters do
-       (print "Parameter")
-       (print (slot-value p 'name))
+       ;; (print "Parameter")
+       ;; (print (slot-value p 'name))
      ;; (inspect r)
-       (print-relation-parameters r)
+       ;; (print-relation-parameters r)
        (solve-relation p r)
        (format t "~%~a = ~a" (slot-value p 'name) (value p))))
 
@@ -251,6 +312,27 @@
      (print-parameters parameters)
      (print (value unknown)))))
 
+(defun solve-for1 (parameters relations)
+  (solve-system5 relations parameters))
+
+
+(defun solve-for2 (unknown/s)
+  (let (relations parameters unknown)
+    (loop for u in (alexandria:ensure-list unknown/s) do
+	 (setf unknown u)
+	 (all-values (multiple-value-bind (r p) (solve-parameter unknown
+								 :traversed-parameters parameters
+								 :traversed-relations relations)
+		       (setf relations (append r relations))
+		       (setf parameters (append p parameters)))))
+    (setf relations (remove-duplicates relations))
+    (setf parameters (remove-duplicates parameters))
+    (print relations)
+    (print-parameters parameters)
+    (print "Solving")
+    (solve-for1  parameters relations)
+    (print-parameters parameters)))
+    
 
 ;;;; TESTING
 
@@ -274,14 +356,54 @@
        (print-parameters parameters)
        (execute-solution-strategy unknown relations parameters)))))
 
+(defun tt2 ()
+  (let* ((p1 (make-instance 'pipe :vel 1 :d 2 :nu 0.03))
+	 (unknown (slot-value p1 'Q)))
+    (solve-for2 unknown)))
+    
+
 (defun three-reservoir-problem ()
   (let* ((p1 (make-instance 'pipe :name "p1" :r 15938 :p1 24))
 	 (p2 (make-instance 'pipe :name "p2" :r 83565 :p1 8))
 	 (p3 (make-instance 'pipe :name "p3" :r 170014 :p1 0))
 	 (unknown (slot-value p1 'q)))
     (connect-pipes (list p1 p2 p3) (list t t t))
-    (solve-for unknown)))
+    (solve-for2 unknown)))
 
+(defun three-reservoir-problem2 ()
+  (let* ((p1 (make-instance 'pipe :name "p1" :r 2.52 :p1 60))
+	 (p2 (make-instance 'pipe :name "p2" :r 16.26 :q 0.3))
+	 (p3 (make-instance 'pipe :name "p3" :r 17.98 :p1 38))
+	 (unknown (slot-value p3 'q)))
+    (connect-pipes (list p1 p2 p3) (list t t t))
+    (solve-for2 (list unknown (slot-value p2 'p1)))))
+
+(defun tt3 ()
+  "Pressure formula check"
+  (let* ((p1 (make-instance 'pipe :name "p1" :p2 10))
+	 (p2 (make-instance 'pipe :name "p2"))
+	 (p3 (make-instance 'pipe :name "p3")))
+    (connect-pipes (list p1 p2 p3) (list t t t))
+    (solve-for2 (list (slot-value p2 'p2)
+		      (slot-value p3 'p2)))))
+
+(defun tt4 ()
+  "Continuity check"
+  (let* ((p1 (make-instance 'pipe :name "p1" :q 10))
+	 (p2 (make-instance 'pipe :name "p2" :q 5))
+	 (p3 (make-instance 'pipe :name "p3")))
+    (connect-pipes (list p1 p2 p3) (list t t t))
+    (solve-for2 (list
+		      (slot-value p3 'q)))))
+
+(defun tt5 ()
+  "Head loss and head loss 2 check"
+  (let* ((p1 (make-instance 'pipe :name "p1" :p1 2 :p2 8))
+	 (p2 (make-instance 'pipe :name "p2" :r 5 :Q 3))
+	 (p3 (make-instance 'pipe :name "p3")))
+    (connect-pipes (list p1 p2 p3) (list t t t))
+    (solve-for2 (list (slot-value p1 'hf)
+		      (slot-value p2 'hf)))))
 
 (defun connect-pipes (pipes ends)
   (let ((discharge-relation (make-instance 'continuity)))
@@ -291,6 +413,7 @@
 	 (add-discharge-connection (slot-value p 'q) discharge-relation endp)
 	 (when prev-pipe-p
 	   (make-instance 'equal-pressure :p1 prev-pipe-p :p2 (slot-value p (if endp 'p2 'p1))))
+;;	   (setf (slot-value p (if endp 'p2 'p1)) prev-pipe-p)
 	 (setf prev-pipe-p (slot-value p (if endp 'p2 'p1))))))
 	   
 
@@ -307,9 +430,8 @@
     (connect-pipes (list ab bd bc b2) '(t nil nil nil))
     (connect-pipes (list bd cd d3) '(t t nil))
     (connect-pipes (list ac bc cd) '(t t nil))
-    (solve-for (list (slot-value cd 'q)
+    (solve-for2 (list (slot-value cd 'q)
 		     (slot-value bc 'hf)))))
-
 
 ;;
 (defparameter *pipe-network-nodes* nil)
@@ -333,7 +455,7 @@
 (defun find-loops (network adjacent-nodes-fn)
   (let* ((visited nil)
 	(loops nil)
-	(all-loops (all-values
+	 (all-loops (all-values
 		     (let ((node (a-member-of network)))
 		       (setf loops (find-loops0 node node adjacent-nodes-fn visited))
 		       (global (pushnew node visited))
@@ -377,10 +499,11 @@
 (defun add-pipe-network-loop-equations ()
   (let ((loops (remove-duplicates
 		(find-loops *pipe-network-nodes*
-			    (lambda (node)
-			      (slot-value node 'links)))
+				   (lambda (node)
+				     (slot-value node 'links)))
 		:test #'equal
 		:key #'(lambda (l) (sort (loop for n in l collect (slot-value n 'number)) #'<)))))
+    ;; (print loops)
     (loop for l in loops
        for (pipes signs) = (loop-pipes l)
        for eq = (make-instance 'loop-head-loss :pipes pipes :signs signs))))
@@ -427,7 +550,11 @@
 	       (:r (setf (value vr) (abs (/ sum (expt (value vq) 2)))))
 	       (:q (setf (value vq) (signed-sqrt (/ (- sum) vs (value vr))))))))
        
-   
+(defmethod eval-relation ((rel loop-head-loss))
+  (loop for q in (slot-value rel 'qs)
+     for r in (slot-value rel 'rs)
+     for s in (slot-value rel 'signs)
+     summing (* s (signum (value q)) (value r) (expt (value q) 2))))
 
 (defun t4 ()
   (let* ((1a (make-instance 'pipe :name "1A" :r 0 :q 100))
@@ -444,8 +571,51 @@
     (add-node (list bd cd d3) '(t t nil) "d")
     (add-node (list ac bc cd) '(t t nil) "c")
     (add-pipe-network-loop-equations)
-    (solve-for (slot-value cd 'q))))
+    (solve-for2 (slot-value cd 'q))))
 
+(defun t5 ()
+  (let* ((1a (make-instance 'pipe :name "1a" :r 0 :q 5.0))
+	 (ab (make-instance 'pipe :name "ab" :r 2))
+	 (b2 (make-instance 'pipe :name "b2" :r 0 :q 2.5))
+	 (bc (make-instance 'pipe :name "bc" :r .5))
+	 (3c (make-instance 'pipe :name "3c" :q 2))
+	 (cd (make-instance 'pipe :name "cd" :r 1.5))
+	 (d4 (make-instance 'pipe :name "d4" :q 3))
+	 (de (make-instance 'pipe :name "de" :r .5))
+	 (5e (make-instance 'pipe :name "5e" :q 5))
+	 (ef (make-instance 'pipe :name "ef" :r .5))
+	 (f6 (make-instance 'pipe :name "f6" :q 2.5))
+	 (af (make-instance 'pipe :name "af" :r 2))
+	 (ad (make-instance 'pipe :name "ad" :r 200))
+	 (*pipe-network-nodes* nil))
+    (add-node (list 1a ab ad af) (list t nil nil nil) "a") ;a
+    (add-node (list ab bc b2) (list t nil nil) "b") ;b 
+    (add-node (list bc cd 3c) (list t nil t) "c") ;c
+    (add-node (list d4 ad de cd) (list nil t nil nil) "d") ;d
+    (add-node (list 5e de ef) (list t t nil) "e");e
+    (add-node (list ef af f6) (list t t nil) "f");f
+
+    ;; (loop for node in *pipe-network-nodes* do
+    ;; 	 (print node)
+    ;; 	 (print (slot-value node 'links)))
+    (add-pipe-network-loop-equations)
+     (solve-for2 (slot-value ad 'q))))
+
+    
+
+(defun t5 ()
+  (define-relation r1
+      :parameters (x y)
+      :implicit (+ x y -2))
+  (define-relation r2
+      :parameters (x y)
+      :implicit (+ x (- y) -4))
+  (let ((x (make-instance 'parameter :name "x"))
+	(y (make-instance 'parameter :name "y")))
+    (make-instance 'r1 :x x :y y)
+    (make-instance 'r2 :x x :y y)
+    (solve-for2 (list x y))))
+  
 
 (define-relation reynolds-number
     :parameters (Re v nu D)
@@ -499,6 +669,12 @@
 	   (incf sum (* f (value p))))
        finally
 	 (setf (value req) (* req-f (- sum))))))
+
+(defmethod eval-relation ((r continuity))
+  (with-slots (parameters factors) r
+    (* 1 (loop for p in parameters
+	      for f in factors
+	      summing (* f (value p))))))
 
 (define-relation equal-pressure
     :name "Equal pressure at two point or a junction"
