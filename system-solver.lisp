@@ -153,7 +153,13 @@
      finally
        (progn
 	 (print "Wasn't within tolerance"))))
-	   
+
+(defmethod unknowns ((r relation))
+  (remove-if #'known-parameter-p (slot-value r 'parameters)))
+
+(defmethod unknowns ((l list))
+  (remove-if #'known-parameter-p l))
+
 (defun solve-parameter (p &key traversed-relations traversed-parameters)
   ;; (print "solving parameter")
   (when (or (known-parameter-p p) (find p traversed-parameters))
@@ -171,7 +177,7 @@
     ;; (inspect relation)
     (let ((traversed-relations (cons relation traversed-relations))
 	  (traversed-parameters (cons p traversed-parameters)))
-      (setf unknowns (remove-if #'known-parameter-p (slot-value relation 'parameters)))
+      (setf unknowns (unknowns r))
       (if unknowns
 	  (progn
 	    (loop for unknown in unknowns do
@@ -332,7 +338,55 @@
     (print "Solving")
     (solve-for1  parameters relations)
     (print-parameters parameters)))
-    
+
+(defun search-params/rels (params &optional trels tparams)
+  "Search all parameters and relations related to given parameters"
+  (loop for p in params
+     unless (find p tparams) do
+       (push p tparams)
+       (loop for r in (relations p)
+	  unless (find r trels) do
+	    (push r trels)
+	    (setf (values trels tparams)
+		  (search-params/rels (parameters r) trels tparams))))
+  (values trels tparams))
+
+(defclass system ()
+  ((parameters :accessor parameters :initarg :parameters)
+   (relations :accessor relations :initarg :relations)
+   (solved-parameters :accessor solved-parameters :initform nil)))
+
+(defmethod initialize-instance :after ((s system) &key)
+  (with-slots (parameters) s 
+    (let ((unknowns (remove-if #'known-parameter-p parameters))
+	  (knowns (remove-if-not #'known-parameter-p parameters)))
+      (setf (solved-parameters s) knowns
+	    parameters unknowns))))
+
+(defmethod remove-parameter ((p parameter) (s system))
+  (with-slots (parameters solved-parameters) s
+    (setf parameters (remove p parameters))
+    (push p solved-parameters)))
+
+(defmethod simple-solve ((s system))
+  (loop for p in (parameters s) do 
+     (unless (known-parameter-p p) 
+       (loop for r in (relations p)
+	  for us = (unknowns r)
+	  when (= (length us) 1)
+	  do (progn (solve-relation p r)
+		    (remove-parameter p s)
+		    (return))))))
+
+;; (defmethod dimensionally-reduce ((s system))
+;;   ()) TODO
+
+(defun solve-for (params)
+  (multiple-value-bind (rs ps) (search-params/rels params)
+    (let* ((system (make-instance 'system :parameters ps :relations rs))
+	   (simple-solved (simple-solve system))
+	   (system (dimensionally-reduce system)))
+      (inspect system))))
 
 ;;;; TESTING
 
@@ -350,11 +404,7 @@
 (defun tt ()
   (let* ((p1 (make-instance 'pipe :vel 1 :d 2 :nu 0.03))
 	 (unknown (slot-value p1 'Q)))
-    (one-value
-     (multiple-value-bind (relations parameters) (solve-parameter unknown)
-       (print relations)
-       (print-parameters parameters)
-       (execute-solution-strategy unknown relations parameters)))))
+    (solve-for (list unknown))))
 
 (defun tt2 ()
   (let* ((p1 (make-instance 'pipe :vel 1 :d 2 :nu 0.03))
