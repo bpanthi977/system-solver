@@ -96,14 +96,17 @@
 		  r))
 
 (defmethod eval-relation ((r relation))
-  (when (slot-boundp r 'implicit)
-    (let ((params (mapcar #'(lambda (slot) (value (slot-value r slot))) ;; TODO: sorting can be done beforehand
-			  (slot-value r 'parameter-slots))))
-      (apply (slot-value r 'implicit) params))))
+  (if (slot-boundp r 'implicit)
+      (let ((params (mapcar #'(lambda (slot) (value (slot-value r slot))) ;; TODO: sorting can be done beforehand
+			    (slot-value r 'parameter-slots))))
+	(apply (slot-value r 'implicit) params))
+      (error "Cannot evaluate relation ~a" r)))
 
 (defun known-parameter-p (parameter)
   "Is the parameter's value known?"
-  (slot-boundp parameter 'value))
+  (and (slot-boundp parameter 'value)
+       (value parameter)))
+  
 
 (defun eval-functions (functions)
   (map 'vector #'eval-relation functions))
@@ -177,7 +180,7 @@
     ;; (inspect relation)
     (let ((traversed-relations (cons relation traversed-relations))
 	  (traversed-parameters (cons p traversed-parameters)))
-      (setf unknowns (unknowns r))
+      (setf unknowns (unknowns relation))
       (if unknowns
 	  (progn
 	    (loop for unknown in unknowns do
@@ -280,7 +283,7 @@
 					  ((getf relation :relation)
 					   `(push (make-instance ',(getf relation :relation)
 								 ,@(getf relation :parameters))
-						  (slot-value ,instance 'relations)))))					  
+						  (slot-value ,instance 'relations)))))	 
 				    relations-list))))))))
 
 (defmacro define-relation (name &rest body)
@@ -301,7 +304,7 @@
    (implicit :initform (lambda (x y) (+ x y)))
    (parameter-slots :initform '(x y))))
 
-(defun solve-for (unknown/s)
+(defun solve-for0 (unknown/s)
   (one-value
    (let (relations parameters unknown)
      (loop for u in (alexandria:ensure-list unknown/s) do
@@ -354,7 +357,8 @@
 (defclass system ()
   ((parameters :accessor parameters :initarg :parameters)
    (relations :accessor relations :initarg :relations)
-   (solved-parameters :accessor solved-parameters :initform nil)))
+   (solved-parameters :accessor solved-parameters :initform nil)
+   (removed-parameters :initform nil)))
 
 (defmethod initialize-instance :after ((s system) &key)
   (with-slots (parameters) s 
@@ -364,9 +368,17 @@
 	    parameters unknowns))))
 
 (defmethod remove-parameter ((p parameter) (s system))
-  (with-slots (parameters solved-parameters) s
+  (with-slots (parameters solved-parameters removed-parameters) s
     (setf parameters (remove p parameters))
-    (push p solved-parameters)))
+    (if (known-parameter-p p)
+	(push p solved-parameters)
+	(push p removed-parameters))))
+
+(defmethod remove-relations ((rs list) (s system))
+  (setf (relations s) (set-difference (relations s) rs)))
+
+(defmethod add-relations ((rs list) (s system))
+  (setf (relations s) (union (relations s) rs)))
 
 (defmethod simple-solve ((s system))
   (loop for p in (parameters s) do 
@@ -378,24 +390,141 @@
 		    (remove-parameter p s)
 		    (return))))))
 
-;; (defmethod dimensionally-reduce ((s system))
-;;   ()) TODO
+(defmethod choose-for-substitution ((r relation))
+  "Choose a parameter to be substituted by another one; 
+if the relation or other condition is not suitable  choose no "
+  ;; if the parameters are related by more than two relations, reject
+  (let ((ps (unknowns r)))
+    (when (> (length (remove-if-not #'(lambda (r) (find (second ps) (parameters r)))
+				    (relations (first ps))))
+	     1)
+      (return-from choose-for-substitution nil))
+    (values (first ps) (second ps))))
 
+(defclass composite-relation (relation)
+  ((originalr :initarg :originalr)
+   (ep :initarg :ep) 
+   (es-r :initarg :es-r) 
+   (sp :initarg :sp) 
+   (e->s :initarg :e->s)
+   (s->e :initarg :s->e))
+  (:documentation "ep = eliminated parameter
+es-r = relation used to eliminate
+sp = substitution parameter"))
+
+(defmethod initialize-instance :after ((cr composite-relation) &key)
+  (setf (slot-value cr 'parameters) (union (list (slot-value cr 'sp))
+					   (remove (slot-value cr 'ep)
+						   (parameters (slot-value cr 'originalr))))))
+
+(defmethod print-object  ((cr composite-relation) s)
+  (with-slots (ep sp originalr ep-r) cr
+    (format s "<# CR ep:~a sp:~a (~a)";; or:~a ep-r:~a" ep sp originalr ep-r)))
+	    ep sp (parameters cr))))
+    
+(defmethod solve-relation ((p parameter) (cr composite-relation))
+  "Solve for parameter p using composed-relation cr"
+  (with-slots (ep sp originalr) cr 
+  (if (eq p sp)
+      (progn
+	(solve-relation ep originalr)
+	(setf (value sp) (funcall (slot-value cr 'e->s) (value ep))))
+      (progn
+	(setf (value ep) (funcall (slot-value cr 's->e) (value sp)))
+	(solve-relation p originalr)))))
+
+(defmethod eval-relation ((cr composite-relation))
+  (with-slots (s->e originalr ep sp) cr
+    (setf (value ep) (funcall s->e (value sp)))
+    (eval-relation originalr)))
+  
+(defmethod compose-relations ((ep parameter) (es-r relation) (sp parameter))
+  "Replace all relations of ep (eliminated parameter) by composing new relations wrt sp (substituted parameter) using es-r; 
+Thus n(unknown_params(r)) = 2"
+  (let* ((p_0 nil)
+	 (o_0 nil)
+	 (p->o (lambda (p)
+		 (if (and p_0
+			  (= p p_0))
+		     o_0
+		     (setf p_0 p
+			   o_0 (solve-relation sp es-r)))))
+	 (o->p (lambda (o)
+		 (if (and o_0
+			  (= o o_0))
+		     p_0
+		     (setf o_0 o
+			   p_0 (solve-relation ep es-r)))))
+	 cr crs)
+    (loop for r in (relations ep) do
+	 (if (eq r es-r)
+	     (setf (relations sp) (remove es-r (relations sp)))
+	     (progn 
+	       (setf cr (make-instance 'composite-relation :ep ep :sp sp :es-r es-r
+				       :e->s p->o :s->e o->p :originalr r))
+	       (loop for p in (unknowns r)
+		  unless (eq p ep) do
+		    (setf (relations p) (cons cr (remove r (relations p)))))
+	       (push cr crs))))
+    (setf (relations sp) (union (relations sp) crs))
+    crs))
+
+(defmethod dimensionally-reduce ((s system))
+  (loop for p in (parameters s) do
+       (loop for r in (remove-if-not #'(lambda (r)
+					 (= (length (unknowns r)) 2))
+				  (relations p))
+	  when (find p (parameters s)) do
+	    ;; (print (unknowns r))
+		     (multiple-value-bind (p other)
+			 (choose-for-substitution r)
+		       (when (and p other)
+			 (print (list p other r))
+			 (remove-parameter p s)
+			 (remove-relations (relations p) s)
+			 (add-relations (compose-relations p r other) s))))))
+		       
 (defun solve-for (params)
   (multiple-value-bind (rs ps) (search-params/rels params)
     (let* ((system (make-instance 'system :parameters ps :relations rs))
-	   (simple-solved (simple-solve system))
-	   (system (dimensionally-reduce system)))
-      (inspect system))))
+	   (simple-solved (simple-solve system)))
+      (dimensionally-reduce system)
+      
+      (solve-for2 params)
+      ;; (inspect system))))
+      system)))
+
 
 ;;;; TESTING
 
+;; dimensionally-reduce test
+(define-relation r1
+    :parameters (a b)
+    :implicit (- a (* 2 b)))
+(define-relation r2
+    :parameters (b c)
+    :implicit (- b (expt c 2) -10))
+(define-relation r3
+    :parameters (a c)
+    :implicit (- a  c 5))
+
+(define-component dtest
+      :parameters (a b c)
+      :relations ((:relation r1 :parameters (:a a :b b))
+  		  (:relation r2 :parameters (:b b :c c))
+  		  (:relation r3 :parameters (:a a :c c))))
+
+(defun test-dimensional-reduce ()
+  (let ((dtest (make-instance 'dtest)))
+    (solve-for (list (slot-value dtest 'a)))))
+
 (define-component pipe
-    :parameters (Re vel D nu Q A r hf p1 p2)
-    :relations ((:relation pipe-discharge
-			   :parameters (:Q q :v vel :d d))
-		(:relation reynolds-number
-			   :parameters (:Re Re :v vel :nu nu :D D))
+    ;; :parameters (Re vel D nu Q A r hf p1 p2)
+    :parameters (Q r hf p1 p2)
+    :relations (;; (:relation pipe-discharge
+		;; 	   :parameters (:Q q :v vel :d d))
+		;; (:relation reynolds-number
+		;; 	   :parameters (:Re Re :v vel :nu nu :D D))
 		(:relation head-loss
 			   :parameters (:hf hf :r r :q q))
 		(:relation head-loss-2
