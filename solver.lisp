@@ -53,8 +53,6 @@
 	     (format t "~%Took ~d iterations" iter)
 	     (return (gsll:solution fit)))))))
 	
-
-
 ;;;; TEST
 (defun test-solve1 ()
   (flet ((xi (x i) (grid:aref x i)))
