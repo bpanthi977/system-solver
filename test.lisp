@@ -71,7 +71,9 @@
   (solve-system4 (getf sys :functions)
 		 (getf sys :guess)))
 
-
+(defun test-2 ()
+  (let ((p (make-instance 'pipe :D 0.8 :k 1.6d-3 :q 5 :l 100 :nu 1d-6)))
+    (solve-for (slot-value p 'hf))))
 
 ;;;; TESTING
 
@@ -232,7 +234,7 @@
      for s in (slot-value rel 'signs)
      summing (* s (signum (value q)) (value r) (expt (value q) 2))))
 
-(defun t4 ()
+(defun t42 ()
   (let* ((1a (make-instance 'pipe :name "1A" :r 0 :q 100))
 	 (ab (make-instance 'pipe :name "AB" :r 1))
 	 (b2 (make-instance 'pipe :name "B2" :r 0 :q 25))
@@ -247,7 +249,7 @@
     (add-node (list bd cd d3) '(t t nil) "d")
     (add-node (list ac bc cd) '(t t nil) "c")
     (add-pipe-network-loop-equations)
-    (solve-for2 (slot-value cd 'q))))
+    (solve-for (slot-value cd 'q))))
 
 (defun t5 ()
   (let* ((1a (make-instance 'pipe :name "1a" :r 0 :q 5.0))

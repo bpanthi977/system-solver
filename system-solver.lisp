@@ -29,10 +29,12 @@
   (setf (relations s) (union (relations s) rs)))
 
 (defmethod print-object ((s system) stream)
-  (with-slots (parameters removed-parameters relations) s 
+  (with-slots (parameters solved-parameters removed-parameters relations) s 
     (format stream "~a+~a parameters ~a relations"
 	    (length parameters) (length removed-parameters) (length relations))
     (loop for p in parameters do
+	 (print p stream))
+    (loop for p in solved-parameters do
 	 (print p stream))
     (loop for p in removed-parameters do
 	 (print p stream))))
@@ -111,14 +113,19 @@ consistent solution when number of relations > number of parameters, :largest sy
 
 (defmethod simple-solve ((s system))
   "Solve a system as far as possible using one-to-one relations, ie without using simultaneous relations"
-  (loop for p in (parameters s) do 
+  (loop for p in (parameters s)
+     with solved = 0 do 
        (unless (known-parameter-p p) 
 	 (loop for r in (relations p)
 	    for us = (unknowns r)
 	    when (= (length us) 1)
 	    do (progn (solve-relation p r)
 		      (remove-parameter p s)
-		      (return))))))
+		      (remove-relations (list r) s)
+		      (incf solved)
+		      (return))))
+     finally (when (> solved 0)
+	       (simple-solve s))))
 
 (defmethod choose-for-substitution ((r relation))
   "Choose a parameter to be substituted by another one; 
@@ -179,6 +186,6 @@ if the relation or other condition is not suitable  choose no "
   (solve-system-levenberg (relations system) (parameters system))
   system)
 
-(defun solve-for (params)
+(defun solve-for (param/s)
   "Search for relations and find consistent solution for solvable parameters"
-  (solve-system (find-solvable-system-for params :largest)))
+  (solve-system (find-solvable-system-for (alexandria:ensure-list param/s) :largest)))

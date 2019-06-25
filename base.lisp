@@ -64,7 +64,7 @@
       (let* ((implicit (slot-value r 'implicit))
 	     (g (lambda (x)
 		  (apply implicit (concatenate 'list pre (list x) post)))))
-	(setf (value (slot-value r var)) (newton-solver-general g 0))))
+	(setf (value (slot-value r var)) (newton-solver-general g 1))))
     (error "Can't solve for ~a when no implicit relation is present in ~a" var r)))
 
 (defmethod solve-relation ((p parameter) (r relation))
@@ -76,7 +76,7 @@
       (let*  ((implicit (slot-value r 'implicit))
   	     (g (lambda (x)
   		  (apply implicit (concatenate 'list pre (list x) post)))))
-  	(setf (value p) (newton-solver-general g 0))))))
+  	(setf (value p) (newton-solver-general g 1))))))
 
 (defmethod eval-relation ((r relation))
 ;; This also assumes that parameter order is unaltered.

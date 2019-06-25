@@ -30,8 +30,26 @@
     :implicit (+ hf (- p1) p2)
     :name "Head loss depending on pressure difference")
 
+(define-relation friction-factor*
+    :name "1/sqrt(Friction factor) f*(k,Re)"
+    :parameters (f* k Re D)
+    :implicit (if (< Re 2000)
+		  (- f* (sqrt (/ Re 64))) ;; Laminar case
+		  (+ f*  ;; Colebrook's equation
+		     (* 2 (/ (log 10)) (log (+ (/ k D 3.71) (* 2.523 f* (/ Re) )))))))
+
+(define-relation friction-factor->f*
+    :name "Friction factor and 1/sqrt(f)"
+    :parameters (f f*)
+    :implicit (- f (/ (expt f* 2))))
+
+(define-relation resistance-coeff
+    :name "Resistance Coefficient r(f, L, D)"
+    :parameters (r f L D)
+    :implicit (- r (* 8 f l (/ 1 (expt pi 2) 9.81 (expt D 5)))))
+
 (define-component pipe
-    :parameters (Re vel D nu Q A r hf p1 p2)
+    :parameters (Re vel D nu Q A r hf p1 p2 f k L f*)
     :relations ((:relation pipe-discharge
 			   :parameters (:Q q :v vel :d d))
 		(:relation reynolds-number
@@ -39,13 +57,18 @@
 		(:relation head-loss
 			   :parameters (:hf hf :r r :q q))
 		(:relation head-loss-2
-			   :parameters (:hf hf :p1 p1 :p2 p2))))
+			   :parameters (:hf hf :p1 p1 :p2 p2))
+		(:relation friction-factor*
+			   :parameters (:f* f* :Re Re :k k :D D))
+		(:relation friction-factor->f*
+			   :parameters (:f f :f* f*))
+		(:relation resistance-coeff
+			   :parameters (:f f :r r :l L :D D))))
 
 (define-relation equal-pressure
     :name "Equal pressure at two point or a junction"
     :parameters (p1 p2)
     :implicit (- p1 p2))
-
 
 ;;
 ;; SAMPLE: Relation without implicit formula (Continuity equation)
