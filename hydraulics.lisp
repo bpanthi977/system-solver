@@ -15,16 +15,6 @@
     :parameters (r Q hf)
     :implicit (- hf (* (signum Q) r (expt Q 2))))
 
-(defmethod solve-relation ((var symbol) (r head-loss))
-  ;; This method is actually not necessary, but is defined for reference
-  (with-slots (r q hf) r
-    (cond ((eql var 'hf)
-	   (setf (value hf) (* (signum (value q)) (value r) (expt (value q) 2))))
-	  ((eql var 'q)
-	   (setf (value q) (* (signum (value hf)) (sqrt (abs (/ (value hf) (value r)))))))
-	  ((eql var 'r)
-	   (setf (value r) (abs (/ (value hf) (expt (value q) 2))))))))
-
 (define-relation head-loss-2
     :parameters (hf p1 p2)
     :implicit (+ hf (- p1) p2)
@@ -75,18 +65,35 @@
 ;;
 (defclass continuity (relation)
   ((name :initform "Continuity at a junction" :allocation :class)
-   (parameter-slots :initform nil)
    (factors :initform nil :initarg :factors)))
 
+(defmethod solve-relation ((p parameter) (r continuity))
+  (with-slots (parameters factors) r
+    (loop for p2 in parameters
+       for f in factors
+       with p-f = nil
+       with sum = 0 do
+	 (if (eql p2 p)
+	     (setf p-f f)
+	     (incf sum (* f (value p2))))
+       finally
+	 (setf (value p) (* p-f (- sum))))))
+
+(defmethod eval-relation ((r continuity))
+  (with-slots (parameters factors) r
+    (* 1 (loop for p in parameters
+	    for f in factors
+	    summing (* f (value p))))))
+
 (defmethod add-discharge-connection ((p parameter) (c continuity) &optional (end t))
+  "Add a pipe (its discharge) to a junction (to continuity equation)"
   (with-slots (parameters parameter-slots factors) c
     (push p parameters)
     (push (if end 1 -1) factors)
-    (push c (relations p))
-    (let ((f (first parameter-slots)))
-      (push (if f (1+ f) 1) parameter-slots))))
+    (push c (relations p))))
 
 (defun connect-pipes (pipes ends)
+  "Connect pipes with at their respective ends (T for end of pipe, Nil for start of pipe)"
   (let ((discharge-relation (make-instance 'continuity)))
     (loop for p in pipes
        for endp in ends
@@ -95,28 +102,3 @@
 	 (when prev-pipe-p
 	   (make-instance 'equal-pressure :p1 prev-pipe-p :p2 (slot-value p (if endp 'p2 'p1))))
 	 (setf prev-pipe-p (slot-value p (if endp 'p2 'p1))))))
-
-(defmethod solve-relation ((var number) (r continuity))
-  ;; TODO remove this method and don't use paramter-slots
-  (with-slots (parameters factors) r
-    (loop for p in parameters
-       for f in factors
-       with req = (nth (1- var) (reverse parameters))
-       with req-f = (nth (1- var) (reverse factors))
-       with sum = 0 do
-	 (unless (eql p req)
-	   (incf sum (* f (value p))))
-       finally
-	 (setf (value req) (* req-f (- sum))))))
-
-(defmethod solve-relation ((p parameter) (r continuity))
-  (solve-relation (- (length (parameters r))
-		     (position p (parameters r)))
-		  r))
-
-(defmethod eval-relation ((r continuity))
-  (with-slots (parameters factors) r
-    (* 1 (loop for p in parameters
-	    for f in factors
-	    summing (* f (value p))))))
-

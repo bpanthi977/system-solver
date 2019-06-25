@@ -28,10 +28,9 @@
 (defun three-reservoir-problem ()
   (let* ((p1 (make-instance 'pipe :name "p1" :r 15938 :p1 24))
 	 (p2 (make-instance 'pipe :name "p2" :r 83565 :p1 8))
-	 (p3 (make-instance 'pipe :name "p3" :r 170014 :p1 0))
-	 (unknown (slot-value p1 'q)))
+	 (p3 (make-instance 'pipe :name "p3" :r 170014 :p1 0)))
     (connect-pipes (list p1 p2 p3) (list t t t))
-    (solve-for (list unknown))))
+    (solve-for (slot-value p1 'q))))
 
 ;; Pipe Network Problem
 (defun t4 ()
@@ -70,6 +69,8 @@
 (defun solve-system-saved (sys)
   (solve-system4 (getf sys :functions)
 		 (getf sys :guess)))
+
+;;;;; Further tests
 
 (defun test-2 ()
   (let ((p (make-instance 'pipe :D 0.8 :k 1.6d-3 :q 5 :l 100 :nu 1d-6)))
