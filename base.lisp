@@ -41,13 +41,17 @@
 
 (defmethod initialize-instance :after ((r relation) &key)
   "Sanitize slot-values, create parameter list, and add this relation to provided parameters"
-  (with-slots (parameter-slots) r
+  (with-slots (parameter-slots parameters) r
     (slot-values->parameters parameter-slots r)
-    (setf (slot-value r 'parameters) (loop for s in parameter-slots
-					for p = (slot-value r s) do
-					(unless (find s (slot-value r 'unsolvable-parameters))
-					  (pushnew r (slot-value p 'relations) :test #'eql))
-				      collect p))))
+    (loop for p in parameters do
+	 (pushnew r (slot-value p 'relations) :test #'eql))
+    (setf parameters (union parameters
+			    (loop for s in parameter-slots
+			       for p = (slot-value r s) do
+				 (unless (find s (slot-value r 'unsolvable-parameters))
+				   (pushnew r (slot-value p 'relations) :test #'eql))
+			       collect p)))))
+
 
 (defmethod unknowns ((r relation))
   (remove-if #'known-parameter-p (parameters r)))

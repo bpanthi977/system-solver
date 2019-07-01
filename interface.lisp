@@ -56,12 +56,18 @@
 					 `(push (make-instance ',(getf relation :relation)
 							       ,@(getf relation :parameters))
 						(slot-value ,instance 'relations)))
-					;; ((getf relation :implicit)
-					;;  `(push (make-instance 'orelation
-					;; 			 :implicit (lambda ,(getf relation :parameters)
-					;; 				     ,(getf relation :implicit))
-					;; 			 :parameters (loop for p in ,(getf relation :parameters)
-					;; 					collect (slot-value ,instance p)))))
+					((getf relation :implicit)
+					 (let ((ps (or (getf relation :parameters)
+						       (getf relation :on))))
+					   `(push (make-instance 'relation
+								:implicit (lambda ,ps
+									    ,(getf relation :implicit))
+								:parameters ,(cons 'list
+										   (loop for p in ps
+										      collect p))
+								:name ,(getf relation :name ""))
+						(slot-value ,instance 'relations))))
+
 					))
 				    relations-list))))))))
 

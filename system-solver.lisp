@@ -175,7 +175,7 @@ if the relation or other condition is not suitable  choose no "
 			    (loop for p in parameters collect
 				 (if (slot-boundp p 'value)
 				     (value p)
-				     (setf (value p) (random 10)))))))
+				     (setf (value p) (1+ (random 10))))))))
       (loop for p in parameters
 	 for i from 0 do
 	   (setf (value p) (grid:aref soln i))))))
