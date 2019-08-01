@@ -21,7 +21,7 @@
 	      (solvable-state p))))  
 
 (defclass relation ()
-  ((parameters :initarg :parameters :accessor parameters :initform nil)
+  ((parameters :accessor parameters :initform nil) ;; parameters are not to be set during initialization
    (parameter-slots :initarg :parameter-slots :initform nil)
    (implicit :initarg :implicit)
    (unsolvable-parameters :initarg :unsolvable-parameters :initform nil)
@@ -43,14 +43,11 @@
   "Sanitize slot-values, create parameter list, and add this relation to provided parameters"
   (with-slots (parameter-slots parameters) r
     (slot-values->parameters parameter-slots r)
-    (loop for p in parameters do
-	 (pushnew r (slot-value p 'relations) :test #'eql))
-    (setf parameters (union parameters
-			    (loop for s in parameter-slots
-			       for p = (slot-value r s) do
-				 (unless (find s (slot-value r 'unsolvable-parameters))
-				   (pushnew r (slot-value p 'relations) :test #'eql))
-			       collect p)))))
+    (setf parameters (loop for s in parameter-slots
+			for p = (slot-value r s) do
+			  (unless (find s (slot-value r 'unsolvable-parameters))
+			    (pushnew r (slot-value p 'relations) :test #'eql))
+			collect p))))
 
 
 (defmethod unknowns ((r relation))
