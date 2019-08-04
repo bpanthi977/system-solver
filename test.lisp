@@ -23,6 +23,13 @@
   (let ((dtest (make-instance 'test)))
     (solve-for (list (slot-value dtest 'a)))))
 
+(defun test ()
+  (with-parameters ((a 3)  b)
+    (satisfying-relations (lambda (a b) (+ a b -2))
+			  (lambda (a b) (- a b 5)))
+    (solve-for (list a b))))
+
+
 ;; Three reservoir problem
 
 (defun three-reservoir-problem ()

@@ -16,8 +16,8 @@
     :implicit (- hf (* (signum Q) r (expt Q 2))))
 
 (define-relation head-loss-2
-    :parameters (hf p1 p2)
-    :implicit (+ hf (- p1) p2)
+    :parameters (hf p1 p2 z1 z2)
+    :implicit (+ hf (- p1) p2 (- z2) z1)
     :name "Head loss depending on pressure difference")
 
 (define-relation friction-factor*
@@ -34,12 +34,12 @@
     :implicit (- f (/ (expt f* 2))))
 
 (define-relation resistance-coeff
-    :name "Resistance Coefficient r(f, L, D)"
-    :parameters (r f L D)
-    :implicit (- r (* 8 f l (/ 1 (expt pi 2) 9.81 (expt D 5)))))
+    :name "Resistance Coefficient r(f, L, D, k)"
+    :parameters (r f L D k)
+    :implicit (- r (* (/ 8 (expt pi 2) 9.81 (expt d 4)) (+ (* f l (/ D)) k))))
 
 (define-component pipe
-    :parameters (Re vel D nu Q A r hf p1 p2 f k L f*)
+    :parameters (Re vel D nu Q A r hf p1 p2 z1 z2 f e L f* k)
     :relations ((:relation pipe-discharge
 			   :parameters (:Q q :v vel :d d))
 		(:relation reynolds-number
@@ -47,18 +47,23 @@
 		(:relation head-loss
 			   :parameters (:hf hf :r r :q q))
 		(:relation head-loss-2
-			   :parameters (:hf hf :p1 p1 :p2 p2))
+			   :parameters (:hf hf :p1 p1 :p2 p2 :z1 z1 :z2 z2))
 		(:relation friction-factor*
-			   :parameters (:f* f* :Re Re :k k :D D))
+			   :parameters (:f* f* :Re Re :k e :D D))
 		(:relation friction-factor->f*
 			   :parameters (:f f :f* f*))
 		(:relation resistance-coeff
-			   :parameters (:f f :r r :l L :D D))))
+			   :parameters (:f f :r r :l L :k k :D D))))
 
 (define-relation equal-pressure
     :name "Equal pressure at two point or a junction"
     :parameters (p1 p2)
     :implicit (- p1 p2))
+
+(define-relation equal-elevation
+    :name "Equal pressure at two point or a junction"
+    :parameters (z1 z2)
+    :implicit (- z1 z2))
 
 ;;
 ;; SAMPLE: Relation without implicit formula (Continuity equation)
@@ -97,8 +102,11 @@
   (let ((discharge-relation (make-instance 'continuity)))
     (loop for p in pipes
        for endp in ends
-       with prev-pipe-p = nil do 
+       with prev-pipe-p = nil
+       with prev-pipe-z = nil do 
 	 (add-discharge-connection (slot-value p 'q) discharge-relation endp)
 	 (when prev-pipe-p
-	   (make-instance 'equal-pressure :p1 prev-pipe-p :p2 (slot-value p (if endp 'p2 'p1))))
-	 (setf prev-pipe-p (slot-value p (if endp 'p2 'p1))))))
+	   (make-instance 'equal-pressure :p1 prev-pipe-p :p2 (slot-value p (if endp 'p2 'p1)))
+	   (make-instance 'equal-elevation :z1 prev-pipe-z :z2 (slot-value p (if endp 'z2 'z1))))
+	 (setf prev-pipe-p (slot-value p (if endp 'p2 'p1))
+	       prev-pipe-z (slot-value p (if endp 'z2 'z1))))))
