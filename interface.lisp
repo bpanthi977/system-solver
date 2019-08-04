@@ -75,9 +75,30 @@
   (let ((parameter-list (getf body :parameters nil))
 	(implicit (getf body :implicit nil))
 	(long-name (getf body :name nil)))
-    `(defclass ,name (relation)
-       ,(append
-	 (list `(parameter-slots :initform ',parameter-list :allocation :class))
-	 (when long-name `((name :initform ,long-name :allocation :class)))
-	 (when implicit `((implicit :initform (lambda ,parameter-list ,implicit))))
-	 (mapcar #'param->slot parameter-list)))))
+    `(eval-when (:compile-toplevel :load-toplevel :execute)
+       (defclass ,name (relation)
+	 ,(append
+	   (list `(parameter-slots :initform ',parameter-list :allocation :class))
+	   (when long-name `((name :initform ,long-name :allocation :class)))
+	   (when implicit `((implicit :initform (lambda ,parameter-list ,implicit))))
+	   (mapcar #'param->slot parameter-list))))))
+
+(defmacro with-parameters (paramlist &rest body)
+  `(let ,(loop for p in paramlist
+	    collect (if (listp p)
+			`(,(first p) (make-instance 'parameter :value ,(second p) :name ,(symbol-name (first p))))
+			`(,p (make-instance 'parameter :name ,(symbol-name p)))))
+     ,@body))
+
+(defmacro satisfying-relations (&rest forms)
+  "make-instance of relations"
+  `(progn ,@(loop for r in forms do
+		 (assert (listp r))
+		 collect (cond ((eql (first r) 'lambda)
+				`(make-instance 'system-solver::implicit-relation
+						:implicit ,r
+						:parameters (list ,@(second r))))
+			       (t `(make-instance ',(first r) ,@(rest r)))))))
+
+  
+  

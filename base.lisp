@@ -21,11 +21,14 @@
 	      (solvable-state p))))  
 
 (defclass relation ()
-  ((parameters :accessor parameters :initform nil) ;; parameters are not to be set during initialization
+  ((parameters :accessor parameters :initform nil) ;; parameters are not to be changed once set, and only implicit relations can have parameters set during initialization
    (parameter-slots :initarg :parameter-slots :initform nil)
    (implicit :initarg :implicit)
    (unsolvable-parameters :initarg :unsolvable-parameters :initform nil)
    (name :initarg :name :type 'string :initform "")))
+
+(defclass implicit-relation (relation)
+  ((parameters :initarg :parameters :initform nil)))
 
 (defmethod print-object ((r relation) s)
   (format s "<#~a ~a>" (slot-value r 'name) (slot-value r 'parameters)))
@@ -43,12 +46,16 @@
   "Sanitize slot-values, create parameter list, and add this relation to provided parameters"
   (with-slots (parameter-slots parameters) r
     (slot-values->parameters parameter-slots r)
-    (setf parameters (loop for s in parameter-slots
-			for p = (slot-value r s) do
-			  (unless (find s (slot-value r 'unsolvable-parameters))
-			    (pushnew r (slot-value p 'relations) :test #'eql))
-			collect p))))
+    (unless (typep r 'implicit-relation)
+      (setf parameters (loop for s in parameter-slots
+			  for p = (slot-value r s) do
+			    (unless (find s (slot-value r 'unsolvable-parameters))
+			      (pushnew r (slot-value p 'relations) :test #'eql))
+			  collect p)))))
 
+(defmethod initialize-instance :after ((r implicit-relation) &key)
+  (loop for p in (parameters r) do
+       (pushnew r (slot-value p 'relations) :test #'eql)))
 
 (defmethod unknowns ((r relation))
   (remove-if #'known-parameter-p (parameters r)))
