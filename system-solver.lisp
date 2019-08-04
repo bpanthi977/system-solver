@@ -3,10 +3,11 @@
 
 ;; System Class 
 (defclass system ()
-  ((parameters :accessor parameters :initarg :parameters)
-   (relations :accessor relations :initarg :relations)
-   (solved-parameters :accessor solved-parameters :initform nil)
-   (removed-parameters :initform nil)))
+  ((parameters :accessor parameters :initarg :parameters :documentation "Parameters that are currently on processsing")
+   (relations :accessor relations :initarg :relations :documentation "Relations used that are directly in use")
+   (solved-parameters :accessor solved-parameters :initform nil :documentation "Solved Parameters")
+   (eliminated-parameters :initform nil :documentation "Parameters eliminated by substitution")
+   (original-parameters :initform nil :initarg :original-parameters :documentation "Parameters that were asked to be solved")))
 
 (defmethod initialize-instance :after ((s system) &key)
   (with-slots (parameters) s 
@@ -16,11 +17,8 @@
 	    parameters unknowns))))
 
 (defmethod remove-parameter ((p parameter) (s system))
-  (with-slots (parameters solved-parameters removed-parameters) s
-    (setf parameters (remove p parameters))
-    (if (known-parameter-p p)
-	(push p solved-parameters)
-	(push p removed-parameters))))
+  (with-slots (parameters) s
+    (setf parameters (remove p parameters))))
 
 (defmethod remove-relations ((rs list) (s system))
   (setf (relations s) (set-difference (relations s) rs)))
@@ -29,14 +27,14 @@
   (setf (relations s) (union (relations s) rs)))
 
 (defmethod print-object ((s system) stream)
-  (with-slots (parameters solved-parameters removed-parameters relations) s 
+  (with-slots (parameters solved-parameters eliminated-parameters relations) s 
     (format stream "~a+~a parameters ~a relations"
-	    (length parameters) (length removed-parameters) (length relations))
+	    (length parameters) (+ (length solved-parameters) (length eliminated-parameters)) (length relations))
     (loop for p in parameters do
 	 (print p stream))
     (loop for p in solved-parameters do
 	 (print p stream))
-    (loop for p in removed-parameters do
+    (loop for p in eliminated-parameters do
 	 (print p stream))))
 
 ;;
@@ -97,7 +95,7 @@ consistent solution when number of relations > number of parameters, :largest sy
 	(:smallest
 	 (loop for u in unknowns do
 	      (screamer:one-value (find-rs-and-ps u)))))
-      (make-instance 'system :relations relations :parameters parameters))))
+      (make-instance 'system :relations relations :parameters parameters :original-parameters unknowns))))
 
 (defun search-params/rels (params &optional trels tparams)
   "Search all parameters and relations related to given parameters"
@@ -111,19 +109,26 @@ consistent solution when number of relations > number of parameters, :largest sy
 		  (search-params/rels (parameters r) trels tparams))))
   (values trels tparams))
 
+(defun simple-solve-parameter (p)
+  "Solve for a parameter simply if there exists any one relation where it is the only unknown"
+  (loop for r in (relations p)
+     for us = (unknowns r)
+     when (= (length us) 1)
+     do (solve-relation p r)
+	(return r)))
+
 (defmethod simple-solve ((s system))
   "Solve a system as far as possible using one-to-one relations, ie without using simultaneous relations"
   (loop for p in (parameters s)
-     with solved = 0 do 
+     with solved = 0
+     with r = nil do
        (unless (known-parameter-p p) 
-	 (loop for r in (relations p)
-	    for us = (unknowns r)
-	    when (= (length us) 1)
-	    do (progn (solve-relation p r)
-		      (remove-parameter p s)
-		      (remove-relations (list r) s)
-		      (incf solved)
-		      (return))))
+	 (setf r (simple-solve-parameter p))
+	 (when r 
+	   (remove-parameter p s)
+	   (push p (slot-value s 'solved-parameters))
+	   (remove-relations (list r) s)
+	   (incf solved)))
      finally (when (> solved 0)
 	       (simple-solve s))))
 
@@ -150,6 +155,7 @@ if the relation or other condition is not suitable  choose no "
 		(choose-for-substitution r)
 	      (when (and p other)
 		(remove-parameter p s)
+		(push p (slot-value s 'eliminated-parameters))
 		(add-relations (create-composite-relation
 				(remove-if-not #'(lambda (r) (find r (relations s)))
 						      (relations p))
@@ -184,6 +190,9 @@ if the relation or other condition is not suitable  choose no "
   (simple-solve system)
   (dimensionally-reduce system)
   (solve-system-levenberg (relations system) (parameters system))
+  (anaphora:awhen (unknowns (slot-value system 'eliminated-parameters))
+    (loop for p in anaphora:it do
+	 (simple-solve-parameter p)))
   system)
 
 (defun solve-for (param/s)
