@@ -3,58 +3,21 @@
 ;; DEMOS
 
 ;; Some random set of functions
-(define-relation r1
-    :parameters (a b c)
-    :implicit (+ (expt a 3) (expt b 3/2) (expt c 0.2) -7.51532))
-(define-relation r2
-    :parameters (a b c)
-    :implicit (+ (expt a 2) (* 3 a (/ b) c) -5.832))
-(define-relation r3
-    :parameters (a b c)
-    :implicit (+ (expt a 4/3) (* c (log b) (/ (log 10))) (* a b) -5.9663))
-
 (define-component test
     :parameters (a b c)
-    :relations ((:relation r1 :parameters (:a a :b b :c c))
-		(:relation r2 :parameters (:a a :b b :c c))
-		(:relation r3 :parameters (:a a :b b :c c))))
+    :relations ((lambda (a b c) (+ (expt a 3) (expt b 3/2) (expt c 0.2) -7.51532))
+		(lambda (a b c) (+ (expt a 2) (* 3 a (/ b) c) -5.832))
+		(lambda (a b c) (+ (expt a 4/3) (* c (log b) (/ (log 10))) (* a b) -5.9663))))
 
 (defun test1 ()
   (let ((dtest (make-instance 'test)))
     (solve-for (list (slot-value dtest 'a)))))
 
 (defun test ()
-  (with-parameters ((a 3)  b)
+  (with-parameters ((a 3) b)
     (satisfying-relations (lambda (a b) (+ a b -2))
 			  (lambda (a b) (- a b 5)))
     (solve-for (list a b))))
-
-
-;; Three reservoir problem
-
-(defun three-reservoir-problem ()
-  (let* ((p1 (make-instance 'pipe :name "p1" :r 15938 :p1 24))
-	 (p2 (make-instance 'pipe :name "p2" :r 83565 :p1 8))
-	 (p3 (make-instance 'pipe :name "p3" :r 170014 :p1 0)))
-    (connect-pipes (list p1 p2 p3) (list t t t))
-    (solve-for (slot-value p1 'q))))
-
-;; Pipe Network Problem
-(defun t4 ()
-  (let* ((1a (make-instance 'pipe :name "1A" :p1 0 :r 0 :q 100))
-	 (ab (make-instance 'pipe :name "AB" :r 1))
-	 (b2 (make-instance 'pipe :name "B2" :r 0 :q 25))
-	 (bc (make-instance 'pipe :name "BC" :r 3))
-	 (bd (make-instance 'pipe :name "BD" :r 2))
-	 (ac (make-instance 'pipe :name "AC" :r 2))
-	 (cd (make-instance 'pipe :name "CD" :r 1))
-	 (d3 (make-instance 'pipe :name "D3" :r 0 :q 75)))
-    (connect-pipes (list 1a ab ac) '(t nil nil))
-    (connect-pipes (list ab bd bc b2) '(t nil nil nil))
-    (connect-pipes (list bd cd d3) '(t t nil))
-    (connect-pipes (list ac bc cd) '(t t nil))
-    (solve-for (list (slot-value cd 'q)
-		     (slot-value bc 'hf)))))
 
 ;;;; TEST
 (defun test-solve1 ()
@@ -84,7 +47,6 @@
     (solve-for (slot-value p 'hf))))
 
 ;;;; TESTING
-
 
 (defun tt ()
   (let* ((p1 (make-instance 'pipe :vel 1 :d 2 :nu 0.03))
