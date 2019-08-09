@@ -179,7 +179,7 @@ if the relation or other condition is not suitable  choose no "
     (let ((soln
 	   (levenberg-solve (loop for r in relations collect (create-evaluator r parameters))
 			    (loop for p in parameters collect
-				 (if (slot-boundp p 'value)
+				 (if (and (slot-boundp p 'value) (value p))
 				     (value p)
 				     (setf (value p) (1+ (random 10))))))))
       (loop for p in parameters
