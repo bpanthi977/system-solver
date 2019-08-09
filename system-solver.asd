@@ -12,6 +12,5 @@
 	       (:file "base")
                (:file "system-solver")
 	       (:file "interface")
-	       (:file "extensions")
-	       (:file "hydraulics")
-	       (:file "test")))
+	       (:file "extensions")))
+

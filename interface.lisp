@@ -49,27 +49,11 @@
 	     (mapcar #'param->slot parameter-list)))
 	 ,(when relations-list
 	    `(defmethod initialize-instance :after ((,instance ,name) &key)
-			(with-slots ,parameter-list ,instance		       
-			  ,@(mapcar (lambda (relation)
-				      (cond
-					((getf relation :relation)
-					 `(push (make-instance ',(getf relation :relation)
-							       ,@(getf relation :parameters))
-						(slot-value ,instance 'relations)))
-					((getf relation :implicit)
-					 (let ((ps (or (getf relation :parameters)
-						       (getf relation :on))))
-					   `(push (make-instance 'relation
-								:implicit (lambda ,ps
-									    ,(getf relation :implicit))
-								:parameters ,(cons 'list
-										   (loop for p in ps
-										      collect p))
-								:name ,(getf relation :name ""))
-						(slot-value ,instance 'relations))))
+			,(when relations-list
+			   `(with-slots ,parameter-list ,instance
+			      (nconc (slot-value ,instance 'relations)
+				     (satisfying-relations ,@relations-list))))))))))
 
-					))
-				    relations-list))))))))
 
 (defmacro define-relation (name &rest body)
   (let ((parameter-list (getf body :parameters nil))
@@ -92,7 +76,7 @@
 
 (defmacro satisfying-relations (&rest forms)
   "make-instance of relations"
-  `(progn ,@(loop for r in forms do
+  `(list ,@(loop for r in forms do
 		 (assert (listp r))
 		 collect (cond ((eql (first r) 'lambda)
 				`(make-instance 'system-solver::implicit-relation
