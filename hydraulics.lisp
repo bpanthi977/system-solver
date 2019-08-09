@@ -40,20 +40,14 @@
 
 (define-component pipe
     :parameters (Re vel D nu Q A r hf p1 p2 z1 z2 f e L f* k)
-    :relations ((:relation pipe-discharge
-			   :parameters (:Q q :v vel :d d))
-		(:relation reynolds-number
-			   :parameters (:Re Re :v vel :nu nu :D D))
-		(:relation head-loss
-			   :parameters (:hf hf :r r :q q))
-		(:relation head-loss-2
-			   :parameters (:hf hf :p1 p1 :p2 p2 :z1 z1 :z2 z2))
-		(:relation friction-factor*
-			   :parameters (:f* f* :Re Re :k e :D D))
-		(:relation friction-factor->f*
-			   :parameters (:f f :f* f*))
-		(:relation resistance-coeff
-			   :parameters (:f f :r r :l L :k k :D D))))
+    :relations ((pipe-discharge :Q q :v vel :d d)
+		(reynolds-number :Re Re :v vel :nu nu :D D)
+		(head-loss :hf hf :r r :q q)
+		(head-loss-2 :hf hf :p1 p1 :p2 p2 :z1 z1 :z2 z2)
+		(friction-factor* :f* f* :Re Re :k e :D D)
+		(friction-factor->f* :f f :f* f*)
+		(resistance-coeff :f f :r r :l L :k k :D D)))
+
 
 (define-relation equal-pressure
     :name "Equal pressure at two point or a junction"
