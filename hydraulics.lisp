@@ -17,7 +17,7 @@
 
 (define-relation head-loss-2
     :parameters (hf p1 p2 z1 z2)
-    :implicit (+ hf (- p1) p2 (- z2) z1)
+    :implicit (+ hf  (+ p2 z2) (- (+ p1 z1)))
     :name "Head loss depending on pressure difference")
 
 (define-relation friction-factor*
