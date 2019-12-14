@@ -1,15 +1,37 @@
 ;;;; system-solver.lisp
 (in-package #:system-solver)
 
-;; System Class 
+
+(defmethod unknowns ((r relation))
+  "Unknown parameters of an relation"
+  (remove-if #'known-parameter-p (parameters r)))
+
+(defmethod unknowns ((l list))
+  (remove-if #'known-parameter-p l))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; System Class
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (defclass system ()
-  ((parameters :accessor parameters :initarg :parameters :documentation "Parameters that are currently on processsing")
-   (relations :accessor relations :initarg :relations :documentation "Relations used that are directly in use")
-   (solved-parameters :accessor solved-parameters :initform nil :documentation "Solved Parameters")
-   (eliminated-parameters :initform nil :documentation "Parameters eliminated by substitution")
-   (original-parameters :initform nil :initarg :original-parameters :documentation "Parameters that were asked to be solved")))
+  ((parameters
+	:accessor parameters :initarg :parameters
+	:documentation "Parameters that are currently on processsing; active parameters")
+   (relations
+	:accessor relations :initarg :relations
+	:documentation "Relations used that are directly in use")
+   (solved-parameters
+	:accessor solved-parameters :initform nil
+	:documentation "Solved Parameters")
+   (eliminated-parameters
+	:initform nil
+	:documentation "Parameters eliminated by substitution")
+   (original-parameters
+	:initform nil :initarg :original-parameters
+	:documentation "Parameters that were asked to be solved")))
 
 (defmethod initialize-instance :after ((s system) &key)
+  "Separate known (solved) and unknown parameters"
   (with-slots (parameters) s 
     (let ((unknowns (remove-if #'known-parameter-p parameters))
 	  (knowns (remove-if-not #'known-parameter-p parameters)))
@@ -17,13 +39,16 @@
 	    parameters unknowns))))
 
 (defmethod remove-parameter ((p parameter) (s system))
+  "Remove active parameter"
   (with-slots (parameters) s
     (setf parameters (remove p parameters))))
 
 (defmethod remove-relations ((rs list) (s system))
+  "Remove active relations"
   (setf (relations s) (set-difference (relations s) rs)))
 
 (defmethod add-relations ((rs list) (s system))
+  "Add relations"
   (setf (relations s) (union (relations s) rs)))
 
 (defmethod print-object ((s system) stream)
@@ -177,14 +202,17 @@ if the relation or other condition is not suitable  choose no "
 (defun solve-system-levenberg (relations parameters)
   (when (and relations parameters)
     (let ((soln
-	   (levenberg-solve (loop for r in relations collect (create-evaluator r parameters))
-			    (loop for p in parameters collect
+		   (levenberg-solve
+			;; list of functions to solve
+			(loop for r in relations collect (create-evaluator r parameters))
+			;; intial value 
+			(loop for p in parameters collect
 				 (if (and (slot-boundp p 'value) (value p))
 				     (value p)
 				     (setf (value p) (1+ (random 10))))))))
       (loop for p in parameters
-	 for i from 0 do
-	   (setf (value p) (grid:aref soln i))))))
+		 for i from 0 do
+		   (setf (value p) (grid:aref soln i))))))
 
 (defun solve-system (system)
   (simple-solve system)

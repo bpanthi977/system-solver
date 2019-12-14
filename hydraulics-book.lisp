@@ -12,14 +12,14 @@
 ;; Find pressure at summit of siphon
 (defun siphon ()
   (let ((pipe1 (make-instance 'pipe :z1 9 :z2 11.5 :l 5 :d 0.1 :f 0.08 :k .5 :p1 100 :name "pipe1"))
-	(pipe2 (make-instance 'pipe :l 10 :d 0.1 :f 0.08 :k 1 :z2 5 :p2 100 :name "pipe2"))
-	system)
+		(pipe2 (make-instance 'pipe :l 10 :d 0.1 :f 0.08 :k 1 :z2 5 :p2 100 :name "pipe2"))
+		system)
     (connect-pipes (list pipe1 pipe2) (list t nil))
     (setf system (solve-for (list (slot-value pipe1 'vel)
-				  (slot-value pipe1 'p2))))
+								  (slot-value pipe1 'p2))))
     (let ((vapour-pressure 2.5))
       (when (< (value (slot-value pipe1 'p2)) vapour-pressure)
-	(print "Minimum pressure (at summit) is less than vapour-pressure")))
+		(print "Minimum pressure (at summit) is less than vapour-pressure")))
     system))
 
 ;; Determination of various parameters for Normal Depth

@@ -8,9 +8,9 @@
   :serial t
   :depends-on (:alexandria :screamer :split-sequence :gsll :anaphora)
   :components ((:file "package")
-	       (:file "solver")
-	       (:file "base")
+			   (:file "solver")
+			   (:file "base")
                (:file "system-solver")
-	       (:file "interface")
-	       (:file "extensions")))
+			   (:file "interface")
+			   (:file "extensions")))
 
