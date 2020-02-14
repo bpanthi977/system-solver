@@ -1,6 +1,32 @@
-(in-package :system-solver)
+(defpackage :system-solver-test
+  (:use :cl :hydraulics :system-solver))
+(in-package :system-solver-test)
 
-;; DEMOS
+(defmacro solve-values (&rest parameters)
+  (alexandria:with-gensyms ((params "params"))
+	`(let ((,params (list ,@parameters)))
+	   (solve-for ,params)
+	   (loop for p in ,params
+		  collect (value p)))))
+
+(defun nearly-same (values1 values2 &optional (tolerance 0.00001))
+  (loop for v1 in values1
+	 for v2 in values2 do
+	   (unless (< (abs (- v1 v2)) tolerance)
+		 (format t  "Values not same ~a <> ~a~%" values1 values2)
+		 (return nil))
+	 finally (progn
+			   (print "test ok")
+			   (return t))))	   
+
+(defmacro test-nearly (values tolerance &body body)
+  (alexandria:with-gensyms ((bodysym "body"))
+	(alexandria:once-only (values tolerance)
+	  `(let ((,bodysym (progn ,@body)))
+		 (nearly-same ,values ,bodysym (if (and (typep t 'boolean)
+												(eq ,tolerance t))
+										   0.0001
+										   ,tolerance))))))
 
 ;; Some random set of functions
 (define-component test
@@ -9,79 +35,79 @@
 				(lambda (a b c) (+ (expt a 2) (* 3 a (/ b) c) -5.832))
 				(lambda (a b c) (+ (expt a 4/3) (* c (log b) (/ (log 10))) (* a b) -5.9663))))
 
-(defun test1 ()
-  (let ((dtest (make-instance 'test)))
-    (solve-for (list (slot-value dtest 'a)))))
+(test-nearly (list 1.229968 2.684053 3.141789) t
+	(let ((dtest (make-instance 'test)))
+	  (solve-values (slot-value dtest 'a)
+					(slot-value dtest 'b)
+					(slot-value dtest 'c))))
 
-(defun test ()
+(test-nearly (list 3 -2) T	
   (with-parameters ((a 3)
 					b)
     (satisfying-relations (lambda (a b) (+ a b -2))
 						  (lambda (a b) (- a b 5)))
-    (solve-for (list a b))))
+    (solve-values a b)))
 
 
 ;;;; TEST
-(defun test-solve1 ()
-  (flet ((xi (x i) (grid:aref x i)))
-    (levenberg-solve (list (lambda (x)
-							 (+ (* (expt (xi x 0) 2) (xi x 1)) -2))
-						   (lambda (x)
-							 (+ (xi x 0) (- (xi x 1)) -4))
-						   (lambda (x)
-							 (+ (xi x 0) (xi x 1) -5.20d0)))
-					 (list 0.0d0 1.0d0))))
+;; (defun test-solve1 ()
+;;   (flet ((xi (x i) (grid:aref x i)))
+;;     (levenberg-solve (list (lambda (x)
+;; 							 (+ (* (expt (xi x 0) 2) (xi x 1)) -2))
+;; 						   (lambda (x)
+;; 							 (+ (xi x 0) (- (xi x 1)) -4))
+;; 						   (lambda (x)
+;; 							 (+ (xi x 0) (xi x 1) -5.20d0)))
+;; 					 (list 0.0d0 1.0d0))))
 
 
-(defun residue (fs xs)
-  (setf xs (grid:make-foreign-array 'double-float :initial-contents xs))
-  (loop for f in fs
-     collect (realpart (funcall f xs))))
+;; (defun residue (fs xs)
+;;   (setf xs (grid:make-foreign-array 'double-float :initial-contents xs))
+;;   (loop for f in fs
+;;      collect (realpart (funcall f xs))))
 
-(defun solve-system-saved (sys)
-  (solve-system4 (getf sys :functions)
-				 (getf sys :guess)))
+;; (defun solve-system-saved (sys)
+;;   (solve-system4 (getf sys :functions)
+;; 				 (getf sys :guess)))
 
 ;;;;; Further tests
 
-(defun test-2 ()
-  (let ((p (make-instance 'pipe :D 0.8 :e 1.6d-3 :q 5 :l 100 :nu 1d-6)))
-    (solve-for (slot-value p 'r))))
+(test-nearly (list 0.59104235) t
+	(let ((p (make-instance 'pipe :D 0.8 :e 1.6d-3 :q 5 :l 100 :nu 1d-6)))
+	  (solve-values (slot-value p 'r))))
 
-;;;; TESTING
 
-(defun tt ()
+(test-nearly (list 3.1415946) t
   (let* ((p1 (make-instance 'pipe :vel 1 :d 2 :nu 0.03))
 		 (unknown (slot-value p1 'Q)))
-    (solve-for1 (list unknown))))
+    (solve-values  unknown)))
 
 
-(defun tt3 ()
+(test-nearly (list 10.0 10.0) t 
   "Pressure formula check"
   (let* ((p1 (make-instance 'pipe :name "p1" :p2 10))
 		 (p2 (make-instance 'pipe :name "p2"))
 		 (p3 (make-instance 'pipe :name "p3")))
     (connect-pipes (list p1 p2 p3) (list t t t))
-    (solve-for2 (list (slot-value p2 'p2)
-					  (slot-value p3 'p2)))))
+    (solve-values (slot-value p2 'p2)
+				  (slot-value p3 'p2))))
 
-(defun tt4 ()
+(test-nearly (list -15) t 
   "Continuity check"
   (let* ((p1 (make-instance 'pipe :name "p1" :q 10))
 		 (p2 (make-instance 'pipe :name "p2" :q 5))
 		 (p3 (make-instance 'pipe :name "p3")))
     (connect-pipes (list p1 p2 p3) (list t t t))
-    (solve-for2 (list
-				 (slot-value p3 'q)))))
+	(solve-values 
+				(slot-value p3 'q))))
 
-(defun tt5 ()
+(test-nearly (list 45.0) t 
   "Head loss and head loss 2 check"
   (let* ((p1 (make-instance 'pipe :name "p1" :p1 2 :p2 8))
 		 (p2 (make-instance 'pipe :name "p2" :r 5 :Q 3))
 		 (p3 (make-instance 'pipe :name "p3")))
     (connect-pipes (list p1 p2 p3) (list t t t))
-    (solve-for2 (list (slot-value p1 'hf)
-					  (slot-value p2 'hf)))))
+    (solve-values (slot-value p2 'hf))))
 
 ;;
 (defparameter *pipe-network-nodes* nil)
@@ -124,13 +150,13 @@
 				(return))))))
 
 (defun add-node (pipes ends &optional name)
-  (let ((discharge-relation (make-instance 'continuity))
+  (let ((discharge-relation (make-instance 'hydraulics::continuity))
 		(node (make-instance 'node :pipes pipes :ends ends :name name :number (length *pipe-network-nodes*))))
     (push node *pipe-network-nodes*)
     (connect-with-previous-nodes node)
     (loop for p in pipes
        for endp in ends do 
-		 (add-discharge-connection (slot-value p 'q) discharge-relation endp))))
+		 (hydraulics::add-discharge-connection (slot-value p 'q) discharge-relation endp))))
 
 (defun loop-pipes (nodes)
   (loop for n in nodes
@@ -206,7 +232,7 @@
      for s in (slot-value rel 'signs)
      summing (* s (signum (value q)) (value r) (expt (value q) 2))))
 
-(defun t42 ()
+(test-nearly (list 43.85435815573788 58.5189154603014 2.3732736160392625) t 
   (let* ((1a (make-instance 'pipe :name "1A" :r 0 :q 100))
 		 (ab (make-instance 'pipe :name "AB" :r 1))
 		 (b2 (make-instance 'pipe :name "B2" :r 0 :q 25))
@@ -221,58 +247,53 @@
     (add-node (list bd cd d3) '(t t nil) "d")
     (add-node (list ac bc cd) '(t t nil) "c")
     (add-pipe-network-loop-equations)
-    (solve-for (slot-value cd 'q))))
+    (solve-values (slot-value cd 'q)
+				  (slot-value ab 'q)
+				  (slot-value bc 'q))))
 
-(defun t5 ()
-  (let* ((1a (make-instance 'pipe :name "1a" :r 0 :q 5.0))
-		 (ab (make-instance 'pipe :name "ab" :r 2))
-		 (b2 (make-instance 'pipe :name "b2" :r 0 :q 2.5))
-		 (bc (make-instance 'pipe :name "bc" :r .5))
-		 (3c (make-instance 'pipe :name "3c" :q 2))
-		 (cd (make-instance 'pipe :name "cd" :r 1.5))
-		 (d4 (make-instance 'pipe :name "d4" :q 3))
-		 (de (make-instance 'pipe :name "de" :r .5))
-		 (5e (make-instance 'pipe :name "5e" :q 5))
-		 (ef (make-instance 'pipe :name "ef" :r .5))
-		 (f6 (make-instance 'pipe :name "f6" :q 2.5))
-		 (af (make-instance 'pipe :name "af" :r 2))
-		 (ad (make-instance 'pipe :name "ad" :r 200))
-		 (*pipe-network-nodes* nil))
-    (add-node (list 1a ab ad af) (list t nil nil nil) "a") ;a
-    (add-node (list ab bc b2) (list t nil nil) "b") ;b 
-    (add-node (list bc cd 3c) (list t nil t) "c") ;c
-    (add-node (list d4 ad de cd) (list nil t nil nil) "d") ;d
-    (add-node (list 5e de ef) (list t t nil) "e");e
-    (add-node (list ef af f6) (list t t nil) "f");f
+;;WARNING: Cannot reach the specified tolerance in F; in ITERATE 
+;; (defun t5 ()
+;;   (let* ((1a (make-instance 'pipe :name "1a" :r 0 :q 5.0))
+;; 		 (ab (make-instance 'pipe :name "ab" :r 2))
+;; 		 (b2 (make-instance 'pipe :name "b2" :r 0 :q 2.5))
+;; 		 (bc (make-instance 'pipe :name "bc" :r .5))
+;; 		 (3c (make-instance 'pipe :name "3c" :q 2))
+;; 		 (cd (make-instance 'pipe :name "cd" :r 1.5))
+;; 		 (d4 (make-instance 'pipe :name "d4" :q 3))
+;; 		 (de (make-instance 'pipe :name "de" :r .5))
+;; 		 (5e (make-instance 'pipe :name "5e" :q 5))
+;; 		 (ef (make-instance 'pipe :name "ef" :r .5))
+;; 		 (f6 (make-instance 'pipe :name "f6" :q 2.5))
+;; 		 (af (make-instance 'pipe :name "af" :r 2))
+;; 		 (ad (make-instance 'pipe :name "ad" :r 200))
+;; 		 (*pipe-network-nodes* nil))
+;;     (add-node (list 1a ab ad af) (list t nil nil nil) "a") ;a
+;;     (add-node (list ab bc b2) (list t nil nil) "b") ;b 
+;;     (add-node (list bc cd 3c) (list t nil t) "c") ;c
+;;     (add-node (list d4 ad de cd) (list nil t nil nil) "d") ;d
+;;     (add-node (list 5e de ef) (list t t nil) "e");e
+;;     (add-node (list ef af f6) (list t t nil) "f");f
 
-    ;; (loop for node in *pipe-network-nodes* do
-    ;; 	 (print node)
-    ;; 	 (print (slot-value node 'links)))
-    (add-pipe-network-loop-equations)
-    (solve-for2 (slot-value ad 'q))))
+;;     ;; (loop for node in *pipe-network-nodes* do
+;;     ;; 	 (print node)
+;;     ;; 	 (print (slot-value node 'links)))
+;;     (add-pipe-network-loop-equations)
+;;     (solve-for (slot-value ad 'q))))
 
 
 
-(defun t5 ()
-  (define-relation r1
-      :parameters (x y)
-      :implicit (+ x y -2))
+(test-nearly '(3.0 -1.0) t
+  (Define-relation r1
+	  :parameters (x y)
+	  :implicit (+ x y -2))
   (define-relation r2
-      :parameters (x y)
-      :implicit (+ x (- y) -4))
+	  :parameters (x y)
+	  :implicit (+ x (- y) -4))
   (let ((x (make-instance 'parameter :name "x"))
 		(y (make-instance 'parameter :name "y")))
-    (make-instance 'r1 :x x :y y)
-    (make-instance 'r2 :x x :y y)
-    (solve-for2 (list x y))))
-
-(defun test-continuity ()
-  (let ((r (make-instance 'continuity
-						  :factors (loop for x from 0 to 10
-									  collect (if (> (random 1.0) 0.5) 1 -1)))))
-    (setf (parameters r)  (loop for x from 0 to 10
-							 collect (make-instance 'parameter)))
-    (test-relation r)))
+	(make-instance 'r1 :x x :y y)
+	(make-instance 'r2 :x x :y y)
+	(solve-values x y)))
 
 
 
@@ -301,3 +322,13 @@
 ;; (setf (getf 3-sys :guess) (reverse (getf t-sys :guess)))
 ;; (solve-system-saved 3-sys)
 ;; (solve-system-saved t-sys)
+(test-nearly (list 1 -1) t 
+  (with-parameters ((a 1) b)
+	(satisfying-relations (lambda (a b)
+							(if (and (> a  -2) (< a 2))
+								(+ a b)
+								(if (> a 5)
+									(- a b)))))
+	(solve-values a b)))
+	
+
