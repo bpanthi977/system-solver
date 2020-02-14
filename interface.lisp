@@ -66,9 +66,10 @@ Also solve-relation is specialized to accept parameter slot name for convenience
 							(t `(make-instance ',(first r) ,@(rest r)))))))
 
 (defclass component ()
-  ((name :initarg :name)
+  ((name :initarg :name :accessor name)
    (parameter-slots :initform nil)
    (relations :initform nil)))
+   
 
 (defmethod update-parameter-names ((c component))
   (loop for x in (slot-value c 'parameter-slots)

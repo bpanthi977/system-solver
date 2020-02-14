@@ -14,10 +14,12 @@
     (solve-for (list (slot-value dtest 'a)))))
 
 (defun test ()
-  (with-parameters ((a 3) b)
+  (with-parameters ((a 3)
+					b)
     (satisfying-relations (lambda (a b) (+ a b -2))
 						  (lambda (a b) (- a b 5)))
     (solve-for (list a b))))
+
 
 ;;;; TEST
 (defun test-solve1 ()

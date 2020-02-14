@@ -147,7 +147,7 @@ consistent solution when number of relations > number of parameters, :largest sy
   (loop for p in (parameters s)
      with solved = 0
      with r = nil do
-       (unless (known-parameter-p p) 
+       (unless (known-parameter-p p)
 	 (setf r (simple-solve-parameter p))
 	 (when r 
 	   (remove-parameter p s)

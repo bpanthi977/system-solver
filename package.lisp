@@ -5,7 +5,13 @@
   (:export
    ;; base
    #:parameter
+   #:name
+   #:value
+   #:relations
+   
    #:relation
+   #:parameters
+
    #:implicit-relation
    #:solve-relation
    #:eval-relation
@@ -19,7 +25,9 @@
    #:with-parameters
    #:satisfying-relations
    #:component
-   #:paramter-slots
+   #:parameter-slots
    ;; system-solver
-   #:solve-for))
+   #:solve-for
+   ;;extensions
+   #:inverse))
    

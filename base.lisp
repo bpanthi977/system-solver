@@ -6,7 +6,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defclass parameter ()
-  ((name :initarg :name)
+  ((name :initarg :name :accessor name)
    (value :initarg :value :accessor value)
    (relations
 	:initarg :relations :accessor relations :initform nil
