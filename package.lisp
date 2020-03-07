@@ -29,5 +29,13 @@
    ;; system-solver
    #:solve-for
    ;;extensions
-   #:inverse))
+   #:inverse
+   #:data
+   #:index1
+   #:index2
+   #:indices
+   #:table-param
+   #:table2d
+   #:interpolate-table2d
+   #:interpolate-tableN))
    

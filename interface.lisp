@@ -126,9 +126,10 @@ Also solve-relation is specialized to accept parameter slot name for convenience
 :name"
   (let ((parameter-list (getf body :parameters nil))
 		(implicit (getf body :implicit nil))
+		(superclass (getf body :class nil))
 		(long-name (getf body :name nil)))
     `(eval-when (:compile-toplevel :load-toplevel :execute)
-       (defclass ,name (relation-implicit-managed)
+       (defclass ,name (relation-implicit-managed ,@superclass)
 		 ,(append
 		   (list `(parameter-slots :initform ',parameter-list :allocation :class))
 		   (when long-name `((name :initform ,long-name :allocation :class)))
