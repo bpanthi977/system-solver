@@ -62,7 +62,8 @@ Also solve-relation is specialized to accept parameter slot name for convenience
 			  collect (cond ((eql (first r) 'lambda)
 							 `(make-instance 'system-solver::implicit-relation
 											 :implicit ,r
-											 :parameters (list ,@(second r))))
+											 :parameters (list ,@(second r))
+											 :name ,(if (and (third r) (stringp (third r))) (third r) "")))
 							(t `(make-instance ',(first r) ,@(rest r)))))))
 
 (defclass component ()
@@ -83,40 +84,31 @@ Also solve-relation is specialized to accept parameter slot name for convenience
     (update-parameter-names c)))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  (defun lambda-params (params)
-    (labels ((collect (params result)
-			   (if params
-				   (progn (push (second params) result)
-						  (push (alexandria:make-keyword (second params)) result)
-						  (collect (cddr params) result))
-				   result)))
-      (collect params nil)))
-
-  (defun plist-values (plist)
-    (labels ((rec (plist)
-			   (when plist
-				 (cons (second plist) (rec (cddr plist))))))
-      (rec plist)))
-
   (defun param->slot (param)
     (setf param (alexandria:ensure-list param))
-    (setf (getf (rest param) :initarg) (alexandria:make-keyword (first param)))
-    param))
+	(let ((result (list (first param)
+						:initarg (alexandria:make-keyword (first param)))))
+	  (when (second param)
+		(alexandria:appendf result (list :initform (second param))))
+
+	  result)))
+	
 
 (defmacro define-component (name &rest body)
   ":parameters 
 :relations"
-  (let ((parameter-list (getf body :parameters nil))
+  (let* ((parameter-list (getf body :parameters nil))
+		(parameters (mapcar (lambda (x) (if (listp x) (first x) x)) parameter-list))
 		(relations-list (getf body :relations nil)))
     (alexandria:with-gensyms (instance) 
       `(progn
 		 (defclass ,name (component)
 		   ,(append
-			 (list `(parameter-slots :initform ',parameter-list))
+			 (list `(parameter-slots :initform ',parameters))
 			 (mapcar #'param->slot parameter-list)))
 		 ,(when relations-list
 			`(defmethod initialize-instance :after ((,instance ,name) &key)
-						(with-slots ,parameter-list ,instance
+						(with-slots ,parameters ,instance
 						  (nconc (slot-value ,instance 'relations)
 								 (satisfying-relations ,@relations-list)))))))))
 
