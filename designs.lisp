@@ -1,48 +1,33 @@
 (in-package #:system-solver)
 
-(defmacro define-design (name parameters &rest body)
-  `(progn
-	 (setf (getf (symbol-plist ',name) 'design-parameters) ',parameters)
-	 (setf (getf (symbol-plist ',name) 'design-body) ',body)))
+;;
+;;; Base
+;;
 
 (defun safe-value (param &optional default)
   (if (slot-boundp param 'value)
 	  (slot-value param 'value)
 	  default))
 
-(defmacro solve-design (name &rest parameters-initialization)
-  (flet ((append-missing-parameters (given required)
-		   (loop for r in required
-				 collect (or (find r given :key #'(lambda (spec)
-													(if (listp spec)
-														(first spec)
-														spec)))
-							 r))))
-;;	(alexandria:with-gensyms (system)
-	  (let ((parameters (getf (symbol-plist name) 'design-parameters)))
-		`(with-parameters ,(append-missing-parameters parameters-initialization parameters)
-		   ,@(getf (symbol-plist name) 'design-body)
-		   ;; (let ((,system (solve-for (list ,@parameters))))
-		   (solve-for (list ,@parameters))
-		   (loop for p in (list ,@parameters)
-				 for p-symbol in ',parameters
-				 collect (cons p-symbol (safe-value p)))))))
+(defmacro make-design (parameters &rest body)
+  `(lambda (&key ,@parameters)
+	 (with-parameters (,@(mapcar #'(lambda (p) (list p p)) parameters))
+	   ,@body 
+	   (solve-for (list ,@parameters))
+	   (loop for p in (list ,@parameters)
+			 for p-symbol in ',parameters
+			 collect (cons p-symbol (safe-value p))))))
 
-(defun iterate-and-find-bounds (design parameters-initialization)
-  (solve-design design parameters-initialization))
+(export 'define-design)
+(defmacro define-design (name parameters &rest body)
+  `(setf (symbol-function ',name)
+		 (make-design ,parameters ,@body)))
 
 ;;
-;;; Testing 
+;;; Bounds finding
 ;;
 
-(define-design desg1 (a b c d e)
-  (satisfying-relations
-   (+ a b 5)
-   (- b c)
-   (+ d 5 (sinh e))
-   (- b a d 2)))
-
-(defun collect-parameters-with-bounds (parameters iterations)
+(defun collect-parameters-with-bounds0 (parameters iterations)
   (loop for p in parameters
 		for upper = nil
 		for lower = nil do
@@ -56,16 +41,56 @@
 								  (if v v nil))))
 		collect (cons p (list (if upper (list lower upper) nil)))))
 
-(defun iafb ()
-  (let ((a '(1 8))
-		(b '(2 3))
-		(c 4)
-		iterations)
-	(loop for a in a do 
-	  (loop for b in b do 
-		(push (solve-design desg1 (a a) (b b) (c c))
-			  iterations)))
-	(collect-parameters-with-bounds '(a b c d e) iterations)))
+(defun collect-parameters-with-bounds (iterations)
+  (when iterations
+	(collect-parameters-with-bounds0 (mapcar #'car (first iterations))
+									 iterations)))
+
+(defun iafb (design choosen pinits results)
+  (unless pinits
+	(return-from iafb (push (apply design choosen) results)))
+  
+  (destructuring-bind (p v . rest)  pinits 
+	(loop for val in (alexandria:ensure-list v) do
+	  (setf results
+			(iafb design
+				  `(,p ,val ,@choosen)
+				  rest
+				  results)))
+	results))
+
+(export 'iterate-and-find-bounds)
+(defun iterate-and-find-bounds (design parameters-initialization)
+  ;; improviastaion : sort the params by least variation first
+  (collect-parameters-with-bounds (iafb design nil parameters-initialization nil)))
+
+;; 
+;;; Testing 
+;;
+
+;; (define-design desg1 (a b c d e)
+;;   (satisfying-relations
+;;    (+ a e  b 5)
+;;    (- b c)
+;;    (+ d 5 (sinh e))
+;;    (- b  d 2)))
+
+;; (defun iafb2 ()
+;;   (let ((a '(1 3 8))
+;; 		(b '(2 3))
+;; 		(c 4)
+;; 		iterations)
+;; 	(loop for a in a do 
+;; 	  (loop for b in b do 
+;; 		(push (desg1 :a a :b b :c c)
+;; 			  iterations)))
+;; 	(collect-parameters-with-bounds0 '(a b c d e) iterations)))
+
+;; (defun iafb3 ()
+;;   (iterate-and-find-bounds #'desg1
+;; 						   '(:a (1 3 8)
+;; 							 :b (2 3)
+;; 							 :c 4)))
 
 
 
