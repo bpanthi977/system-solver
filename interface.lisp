@@ -55,6 +55,42 @@ Also solve-relation is specialized to accept parameter slot name for convenience
 						`(,p (make-instance 'parameter :name ,(symbol-name p)))))
      ,@body))
 
+(defmacro smart-parse-implicit-relation (&whole exp (operator &rest operands))
+  "Parse relations like (= a (- b 2) (+ c 2)) , (- a b) as implicit relation"
+  (labels ((collect-local-vars (exp vars)
+			 ;; (print (list exp vars))
+			 (force-output)
+			 (loop for e in (if (listp exp) (rest exp) (list exp)) do
+			   (if (atom e)
+				   (if (and (symbolp e)
+							(let ((str (symbol-name e)))
+							  (or (not (alexandria:starts-with #\* str))
+								  (not (alexandria:ends-with #\* str)))))
+					   (push e vars))
+				   (setf vars (collect-local-vars e vars)))
+			   (print vars))
+			 vars)
+		   (relation-for-= (operand1 operand2)
+			 (let ((parameters (concatenate 'list
+											(collect-local-vars operand1 nil)
+											(collect-local-vars operand2 nil))))
+			   `(make-instance 'implicit-relation
+							   :implicit (lambda ,parameters
+										   (- ,operand1 ,operand2))
+							   :parameters ',parameters))))
+	(cond ((eql operator '=)
+		   `(progn
+			  ,@(loop with first-operand = (first operands)
+					  for operand in (rest operands)
+					  do
+						 (print (relation-for-= first-operand operand)))))
+		  (t
+		   (let ((parameters (collect-local-vars (second exp) nil)))
+			 `(make-instance 'implicit-relation
+							 :parameters (list ,@parameters)
+							 :implicit (lambda ,parameters
+										 ,(second exp))))))))
+
 (defmacro satisfying-relations (&rest forms)
   "make-instance of relations"
   `(list ,@(loop for r in forms do
@@ -64,6 +100,8 @@ Also solve-relation is specialized to accept parameter slot name for convenience
 											 :implicit ,r
 											 :parameters (list ,@(second r))
 											 :name ,(if (and (third r) (stringp (third r))) (third r) "")))
+							((find (first r) '(= + - * /))
+							 `(smart-parse-implicit-relation ,r))
 							(t `(make-instance ',(first r) ,@(rest r)))))))
 
 (defclass component ()
