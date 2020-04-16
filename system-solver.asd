@@ -12,5 +12,6 @@
 			   (:file "base")
                (:file "system-solver")
 			   (:file "interface")
-			   (:file "extensions")))
+			   (:file "extensions")
+			   (:file "designs")))
 

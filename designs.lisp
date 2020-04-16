@@ -3,6 +3,9 @@
 ;;
 ;;; Base
 ;;
+(defclass design ()
+  ((parameter-names :initarg :parameter-names :initform nil)
+   (parameter-types :initarg :parameter-types :initform 'number)))
 
 (defun safe-value (param &optional default)
   (if (slot-boundp param 'value)
@@ -15,13 +18,15 @@
 	   ,@body 
 	   (solve-for (list ,@parameters))
 	   (loop for p in (list ,@parameters)
-			 for p-symbol in ',parameters
-			 collect (cons p-symbol (safe-value p))))))
+		  for p-symbol in ',parameters
+		  collect p-symbol
+		  collect (safe-value p)))))
 
 (export 'define-design)
 (defmacro define-design (name parameters &rest body)
   `(setf (symbol-function ',name)
-		 (make-design ,parameters ,@body)))
+		 (make-design ,parameters ,@body)
+		 (getf (symbol-plist ',name) :design-info) (make-instance 'design :parameter-names ',parameters)))
 
 ;;
 ;;; Bounds finding
@@ -32,23 +37,24 @@
 		for upper = nil
 		for lower = nil do
 		  (loop for i in iterations
-				for (_ . v) = (assoc p i) do
+				for v = (getf i p) do
 				  (setf upper (if upper
 								  (if v (max upper v) upper)
 								  (if v v nil))
 						lower (if lower
 								  (if v (min lower v) lower)
 								  (if v v nil))))
-		collect (cons p (list (if upper (list lower upper) nil)))))
+	 collect p
+	 collect (if upper (if (= upper lower) upper (list lower upper)) nil)))
 
 (defun collect-parameters-with-bounds (iterations)
   (when iterations
-	(collect-parameters-with-bounds0 (mapcar #'car (first iterations))
+	(collect-parameters-with-bounds0 (loop for p in (first iterations) by #'cddr collect p)
 									 iterations)))
 
-(defun iafb (design choosen pinits results)
+(defun iterate-and-find-bounds0 (design choosen pinits results)
   (unless pinits
-	(return-from iafb (push (apply design choosen) results)))
+	(return-from iterate-and-find-bounds0 (push (apply design choosen) results)))
   
   (destructuring-bind (p v . rest)  pinits 
 	(loop for val in (alexandria:ensure-list v) do
@@ -62,42 +68,21 @@
 (export 'iterate-and-find-bounds)
 (defun iterate-and-find-bounds (design parameters-initialization)
   ;; improviastaion : sort the params by least variation first
-  (collect-parameters-with-bounds (iafb design nil parameters-initialization nil)))
+  (collect-parameters-with-bounds (iterate-and-find-bounds0 design nil parameters-initialization nil)))
 
 ;; 
 ;;; Testing 
 ;;
 
-;; (define-design desg1 (a b c d e)
-;;   (satisfying-relations
-;;    (+ a e  b 5)
-;;    (- b c)
-;;    (+ d 5 (sinh e))
-;;    (- b  d 2)))
+(define-design desg1 (a b c d e)
+  (satisfying-relations
+   (+ a e  b 5)
+   (- b c)
+   (+ d 5 (sinh e))
+   (- b  d 2)))
 
-;; (defun iafb2 ()
-;;   (let ((a '(1 3 8))
-;; 		(b '(2 3))
-;; 		(c 4)
-;; 		iterations)
-;; 	(loop for a in a do 
-;; 	  (loop for b in b do 
-;; 		(push (desg1 :a a :b b :c c)
-;; 			  iterations)))
-;; 	(collect-parameters-with-bounds0 '(a b c d e) iterations)))
-
-;; (defun iafb3 ()
-;;   (iterate-and-find-bounds #'desg1
-;; 						   '(:a (1 3 8)
-;; 							 :b (2 3)
-;; 							 :c 4)))
-
-
-
-
-
-
-
-
-
-
+(defun iafb3 ()
+  (iterate-and-find-bounds #'desg1
+						   '(:a (1 3 8)
+							 :b (2 3)
+							 :c 4)))

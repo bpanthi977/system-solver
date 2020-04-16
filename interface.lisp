@@ -58,7 +58,6 @@ Also solve-relation is specialized to accept parameter slot name for convenience
 (defmacro smart-parse-implicit-relation (&whole exp (operator &rest operands))
   "Parse relations like (= a (- b 2) (+ c 2)) , (- a b) as implicit relation"
   (labels ((collect-local-vars (exp vars)
-			 ;; (print (list exp vars))
 			 (force-output)
 			 (loop for e in (if (listp exp) (rest exp) (list exp)) do
 			   (if (atom e)
@@ -67,8 +66,7 @@ Also solve-relation is specialized to accept parameter slot name for convenience
 							  (or (not (alexandria:starts-with #\* str))
 								  (not (alexandria:ends-with #\* str)))))
 					   (push e vars))
-				   (setf vars (collect-local-vars e vars)))
-			   (print vars))
+				   (setf vars (collect-local-vars e vars))))
 			 vars)
 		   (relation-for-= (operand1 operand2)
 			 (let ((parameters (concatenate 'list
@@ -165,3 +163,9 @@ Also solve-relation is specialized to accept parameter slot name for convenience
 		   (when long-name `((name :initform ,long-name :allocation :class)))
 		   (when implicit `((implicit :initform (lambda ,parameter-list ,implicit))))
 		   (mapcar #'param->slot parameter-list))))))
+
+;; (defmacro define-block (name parameter-list &rest body)
+;;   "Define a relations/design block to be included elsewhere"
+;;   `(define-component ,name
+;; 	 :parameters ,parameter-list
+;; 	 :body (progn ))
