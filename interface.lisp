@@ -69,21 +69,20 @@ Also solve-relation is specialized to accept parameter slot name for convenience
 				   (setf vars (collect-local-vars e vars))))
 			 vars)
 		   (relation-for-= (operand1 operand2)
-			 (let ((parameters (concatenate 'list
-											(collect-local-vars operand1 nil)
-											(collect-local-vars operand2 nil))))
+			 (let ((parameters (union (collect-local-vars operand1 nil)
+									  (collect-local-vars operand2 nil))))
 			   `(make-instance 'implicit-relation
 							   :implicit (lambda ,parameters
 										   (- ,operand1 ,operand2))
-							   :parameters ',parameters))))
+							   :parameters (list ,@parameters)))))
 	(cond ((eql operator '=)
 		   `(progn
 			  ,@(loop with first-operand = (first operands)
-					  for operand in (rest operands)
-					  do
-						 (print (relation-for-= first-operand operand)))))
+				   for operand in (rest operands)
+				   collect
+					 (relation-for-= first-operand operand))))
 		  (t
-		   (let ((parameters (collect-local-vars (second exp) nil)))
+		   (let ((parameters (remove-duplicates (collect-local-vars (second exp) nil))))
 			 `(make-instance 'implicit-relation
 							 :parameters (list ,@parameters)
 							 :implicit (lambda ,parameters

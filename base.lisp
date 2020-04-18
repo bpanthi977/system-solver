@@ -18,17 +18,30 @@
 
 (defun known-parameter-p (parameter)
   "Is the parameter's value known?"
-  (and (slot-boundp parameter 'value)
-       (value parameter)))
+  (let ((solved? (or (eql (solvable-state parameter) :solved)
+					 (eql (solvable-state parameter) :known))))
+	(if solved?
+		(progn 
+		  (unless (and (slot-boundp parameter 'value)
+						(value parameter))
+			(error "Solved parameter ~a doesn't have value ?? why" parameter))
+		  (value parameter)))))
 
 (defmethod print-object ((p parameter) stream)
-  (format stream "<#P ~a = ~a>"
-		  (if (slot-boundp p 'name)
-			  (slot-value p 'name)
-			  "unnamed")
-		  (if (slot-boundp p 'value)
-			  (value p)
-			  (solvable-state p))))  
+  (format stream "<#P ~a ~a ~a>"
+		  (if (slot-boundp p 'name) (slot-value p 'name) "unnamed")
+		  (if (eql (solvable-state p) :unknown)
+			  (if (slot-boundp p 'value) "≈" "")
+			  "=")
+		  (if (slot-boundp p 'value) (value p) (solvable-state p))))
+
+(defmethod initialize-instance :after ((p parameter) &key)
+  "Add this to *system* if available"
+  (if (and (slot-boundp p 'value) (value p)
+		   (eql (solvable-state p) :unknown))
+	  (setf (solvable-state p) :known))
+  (when *system*
+	(add-parameter% p *system*)))
 
 (defclass relation ()
   ((parameters
@@ -46,7 +59,9 @@ parameter instances and this list are not to be changed once initialized")
 They are the links that connect nodes of parameters in the web of parameters and relations"))
 
 (defmethod initialize-instance :after ((r relation) &key)
-  "Add this relation to parameters provided. (except for unsolvable parameters)"
+  "Add this relation to parameters provided. (except for unsolvable parameters)
+and also add it to *system* if available"
+  (when *system* (add-relation r *system*))
   (with-slots (unsolvable-parameters parameters) r
 	(loop for p in (set-difference parameters unsolvable-parameters :test #'eql) do
 		 (pushnew r (slot-value p 'relations)))))	
@@ -54,6 +69,8 @@ They are the links that connect nodes of parameters in the web of parameters and
 (defmethod print-object ((r relation) s)
   (format s "<#~a ~a>" (slot-value r 'name) (slot-value r 'parameters)))
 
+(defmethod remove-relation ((r relation) (p parameter))
+  (setf (relations p) (remove r (relations p))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; IMPLICIT RELATION AND COMPOSITE RELATION
