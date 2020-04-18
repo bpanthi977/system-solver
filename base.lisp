@@ -72,6 +72,10 @@ and also add it to *system* if available"
 (defmethod remove-relation ((r relation) (p parameter))
   (setf (relations p) (remove r (relations p))))
 
+(defmethod invalidate-relation ((r relation))
+  (loop for p in (parameters r) do
+		(remove-relation r p)))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; IMPLICIT RELATION AND COMPOSITE RELATION
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

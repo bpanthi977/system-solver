@@ -101,6 +101,10 @@ Also solve-relation is specialized to accept parameter slot name for convenience
 							 `(smart-parse-implicit-relation ,r))
 							(t `(make-instance ',(first r) ,@(rest r)))))))
 
+(defmacro satisfy (&rest forms)
+  "same as satisfying-relations"
+  `(satisfying-relations ,@forms))
+
 (defclass component ()
   ((name :initarg :name :accessor name)
    (parameter-slots :initform nil)
@@ -168,3 +172,53 @@ Also solve-relation is specialized to accept parameter slot name for convenience
 ;;   `(define-component ,name
 ;; 	 :parameters ,parameter-list
 ;; 	 :body (progn ))
+
+
+(defparameter *system* nil)
+(defmacro with-new-system (var &body body)
+  (assert (typep var 'symbol))
+  `(let* ((*system* (make-instance 'system))
+		  ,@(when var `((,var *system*))))
+	 ,@body
+	 (solve-system *system*)))
+
+(defmacro finally (&body body)
+  "Run the body on completion of the system-solution"
+  (alexandria:with-gensyms (system choice-point)
+	`(let ((,choice-point *choice-point*))
+	   (add-solution-finalizer (alexandria:named-lambda finally  (,system)
+								 (let ((*system* ,system)
+									   (*choice-point* ,choice-point))
+								   ,@body))
+							   *system*))))
+	
+;;;
+;;  EXAMPLES
+;;;
+
+
+(defun ex-interface1()
+  (with-new-system ()
+	(with-parameters (a b)
+	  (satisfying-relations (+ a b 5)
+							(+ (* 2 a) (* 3 b) 9))
+	  (finally 
+		(if (> (value a) -10)
+			(with-parameters (c d)
+			  (satisfying-relations (= c (+ 12 a))
+									(+ d c a (/ 9 a)))
+			  (solve-system)))))))
+
+(defun ex-interface2()
+  (with-new-system s
+	(with-parameters (a b)
+	  (let ((relations (satisfying-relations (+ a b 5)
+											 (+ (* 2 a) (* 3 b) 9))))
+		(finally
+		  (if (> (value a) -10)
+			  (progn
+				(remove-relations relations s)
+				(with-parameters (c d)
+				  (satisfying-relations (= c (+ 12 a))
+										(+ d c a (/ 9 a)))
+				  (solve-system s)))))))))

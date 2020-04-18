@@ -53,7 +53,11 @@ restored to its original value when the choice point is revisited.")))
   (loop for slot in '(parameters relations solved-parameters
 						 eliminated-parameters original-parameters solution-finalizer
 						 choice-points)
-		do (setf (slot-value to slot) (slot-value from slot))))
+		do (setf (slot-value to slot) (slot-value from slot)))
+  to)
+
+(defmethod duplicate-system ((s system))
+  (copy-system s (make-instance 'system)))
 						   
 
 (defmethod remove-parameter% ((p parameter) (s system))
@@ -102,6 +106,7 @@ or if p needs to classified into solvable or unsolvable, solved, ... parameter l
 	 (print p stream))
     (loop for p in eliminated-parameters do
 	 (print p stream))))
+
 
 ;;
 ;; Strategies :)
